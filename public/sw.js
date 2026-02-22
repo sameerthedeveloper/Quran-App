@@ -36,7 +36,18 @@ self.addEventListener('activate', (event) => {
 
 // Fetch strategy
 self.addEventListener('fetch', (event) => {
+    // 1. Only handle GET requests (cache.put throws on POST/PUT)
+    if (event.request.method !== 'GET') return
+
+    // 2. Only handle HTTP/HTTPS (ignore chrome-extension://, wss://, etc)
+    if (!event.request.url.startsWith('http')) return
+
     const url = new URL(event.request.url)
+
+    // 3. Bypass caching completely for Supabase DB requests and local Dev Server HMR
+    if (url.hostname.includes('supabase.co') || url.pathname.includes('/@vite/')) {
+        return
+    }
 
     // Audio files — cache first, then network
     if (
