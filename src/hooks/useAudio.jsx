@@ -3,9 +3,19 @@ import { createContext, useContext, useState, useRef, useEffect, useCallback } f
 const API_BASE = 'https://quranapi.pages.dev/api'
 const AudioCtx = createContext(null)
 
+/*
+  Near-gapless per-ayah playback:
+  - Two Audio elements: pool[0] and pool[1]
+  - While pool[active] plays, pool[1-active] is fully loaded with the NEXT ayah
+  - On ended: flip active index, call play() instantly (~2ms), start loading the one after
+  - Event listeners are on BOTH elements — they check activeIdx to know if they're current
+*/
+
 export function AudioProvider({ children }) {
-  const audioRef = useRef(null)
+  const pool = useRef([new Audio(), new Audio()])
+  const activeIdx = useRef(0) // which pool element is currently playing
   const intervalRef = useRef(null)
+  const nextLoadedRef = useRef(0) // which ayah number is pre-loaded in the inactive slot
 
   const [surahData, setSurahData] = useState(null)
   const [currentAyah, setCurrentAyah] = useState(1)
@@ -17,20 +27,18 @@ export function AudioProvider({ children }) {
   const [ayahTime, setAyahTime] = useState(0)
   const [ayahDuration, setAyahDuration] = useState(0)
 
-  // Progressive data — grows as background fetch progresses
-  const urlCacheRef = useRef({})   // { ayahNum: url }
-  const durCacheRef = useRef({})   // { ayahNum: duration }
-  const [urlsReady, setUrlsReady] = useState(0) // how many URLs fetched so far
+  const urlCacheRef = useRef({})
+  const durCacheRef = useRef({})
   const [completedTime, setCompletedTime] = useState(0)
   const [totalDuration, setTotalDuration] = useState(0)
+  const [urlsReady, setUrlsReady] = useState(0)
 
-  const stateRef = useRef({})
-  stateRef.current = {
-    currentAyah,
-    totalAyah: surahData?.totalAyah || 0,
-    isLooping,
-    completedTime,
-    isPlaying,
+  // Ref-based state for event handlers (avoids stale closures)
+  const s = useRef({})
+  s.current = {
+    currentAyah, totalAyah: surahData?.totalAyah || 0,
+    isLooping, completedTime, isPlaying, reciterId,
+    surahNo: surahData?.surahNo || 1,
   }
 
   const totalAyah = surahData?.totalAyah || 0
@@ -39,185 +47,146 @@ export function AudioProvider({ children }) {
   const duration = totalDuration
   const ayahProgress = ayahDuration > 0 ? Math.max(0, Math.min(100, (ayahTime / ayahDuration) * 100)) : 0
 
-  // Create audio element once
-  useEffect(() => {
-    if (!audioRef.current) {
-      audioRef.current = new Audio()
-      audioRef.current.preload = 'auto'
-    }
-  }, [])
+  // Get active and inactive audio elements
+  const getActive = () => pool.current[activeIdx.current]
+  const getInactive = () => pool.current[1 - activeIdx.current]
 
-  // Get URL for an ayah (from cache or fetch)
+  // ── Get/fetch ayah URL ──
   const getAyahUrl = useCallback(async (ayahNum) => {
     if (urlCacheRef.current[ayahNum]) return urlCacheRef.current[ayahNum]
-
     try {
-      const res = await fetch(`${API_BASE}/${surahNo}/${ayahNum}.json`)
+      const res = await fetch(`${API_BASE}/${s.current.surahNo}/${ayahNum}.json`)
       const data = await res.json()
-      const rec = data.audio?.[String(reciterId)]
+      const rec = data.audio?.[String(s.current.reciterId)]
       const url = rec?.originalUrl || rec?.url || null
       if (url) urlCacheRef.current[ayahNum] = url
       return url
-    } catch {
-      return null
-    }
-  }, [surahNo, reciterId])
+    } catch { return null }
+  }, [])
 
-  // Load and play a specific ayah
-  const loadAndPlay = useCallback(async (ayahNum, shouldPlay = false) => {
-    const audio = audioRef.current
-    if (!audio) return
+  // ── Pre-load next ayah into the inactive slot ──
+  const preloadNext = useCallback(async (nextAyahNum) => {
+    if (nextAyahNum <= 0 || nextAyahNum > s.current.totalAyah) return
+    if (nextLoadedRef.current === nextAyahNum) return // already loaded
 
-    const url = await getAyahUrl(ayahNum)
+    const url = await getAyahUrl(nextAyahNum)
     if (!url) return
 
-    audio.src = url
-    audio.load()
-
-    if (shouldPlay) {
-      const handler = () => {
-        audio.play().then(() => setIsPlaying(true)).catch(() => {})
-        audio.removeEventListener('canplay', handler)
-      }
-      audio.addEventListener('canplay', handler)
-    }
+    const inactive = getInactive()
+    inactive.src = url
+    inactive.preload = 'auto'
+    inactive.load()
+    nextLoadedRef.current = nextAyahNum
   }, [getAyahUrl])
 
-  // ── Background: progressively fetch all URLs + durations ──
+  // ── Load first ayah + background fetch all URLs ──
   useEffect(() => {
     if (!surahData || totalAyah === 0) return
     let cancelled = false
 
-    const fetchProgressively = async () => {
-      // Fetch URLs in batches of 10 (parallel within batch, sequential between batches)
-      const batchSize = 10
-      let totalDur = 0
+    const init = async () => {
+      setLoadingAudio(true)
+      urlCacheRef.current = {}
+      durCacheRef.current = {}
+      nextLoadedRef.current = 0
 
-      for (let batch = 0; batch < Math.ceil(totalAyah / batchSize); batch++) {
-        if (cancelled) break
-        const start = batch * batchSize
-        const end = Math.min(start + batchSize, totalAyah)
-
-        const promises = []
-        for (let i = start; i < end; i++) {
-          const ayahNum = i + 1
-          if (urlCacheRef.current[ayahNum]) {
-            promises.push(Promise.resolve(null)) // already cached
-            continue
-          }
-          promises.push(
-            fetch(`${API_BASE}/${surahNo}/${ayahNum}.json`)
-              .then(r => r.json())
-              .then(data => {
-                const rec = data.audio?.[String(reciterId)]
-                const url = rec?.originalUrl || rec?.url || null
-                if (url) urlCacheRef.current[ayahNum] = url
-                return { ayahNum, url }
-              })
-              .catch(() => ({ ayahNum, url: null }))
-          )
-        }
-
-        await Promise.all(promises)
-        if (cancelled) break
-        setUrlsReady(end)
-
-        // If this is the first batch, allow playing
-        if (batch === 0) setLoadingAudio(false)
+      // Load current ayah immediately
+      const url = await getAyahUrl(currentAyah)
+      if (cancelled) return
+      if (url) {
+        const active = getActive()
+        active.src = url
+        active.preload = 'auto'
+        active.load()
       }
+      setLoadingAudio(false)
 
+      // Fetch all URLs in background (parallel batches of 15)
+      const batch = 15
+      for (let i = 0; i < Math.ceil(totalAyah / batch); i++) {
+        if (cancelled) break
+        const start = i * batch
+        const end = Math.min(start + batch, totalAyah)
+        await Promise.all(
+          Array.from({ length: end - start }, (_, j) => getAyahUrl(start + j + 1))
+        )
+        setUrlsReady(end)
+      }
       if (cancelled) return
 
-      // Now get durations (only need metadata, use single muted loader)
+      // Pre-load next ayah
+      if (currentAyah < totalAyah) preloadNext(currentAyah + 1)
+
+      // Get durations in background (for timeline)
       const loader = new Audio()
       loader.preload = 'metadata'
       loader.muted = true
       loader.volume = 0
+      let total = 0
 
       for (let i = 1; i <= totalAyah; i++) {
         if (cancelled) break
-        if (durCacheRef.current[i]) {
-          totalDur += durCacheRef.current[i]
-          continue
-        }
-
-        const url = urlCacheRef.current[i]
-        if (!url) { durCacheRef.current[i] = 3; totalDur += 3; continue }
-
-        const dur = await new Promise(resolve => {
+        if (durCacheRef.current[i]) { total += durCacheRef.current[i]; continue }
+        const u = urlCacheRef.current[i]
+        if (!u) { durCacheRef.current[i] = 3; total += 3; continue }
+        const d = await new Promise(resolve => {
           const t = setTimeout(() => resolve(3), 3000)
           loader.onloadedmetadata = () => { clearTimeout(t); resolve(loader.duration || 3) }
           loader.onerror = () => { clearTimeout(t); resolve(3) }
-          loader.src = url
+          loader.src = u
           loader.load()
         })
-        durCacheRef.current[i] = dur
-        totalDur += dur
+        durCacheRef.current[i] = d
+        total += d
       }
+      loader.onloadedmetadata = null; loader.onerror = null
+      loader.src = ''; loader.removeAttribute('src')
 
-      // Clean up loader
-      loader.onloadedmetadata = null
-      loader.onerror = null
-      loader.src = ''
-      loader.removeAttribute('src')
-
-      if (!cancelled) setTotalDuration(totalDur)
+      if (!cancelled) setTotalDuration(total)
     }
 
-    // Reset caches for new surah
-    urlCacheRef.current = {}
-    durCacheRef.current = {}
-    setUrlsReady(0)
-    setLoadingAudio(true)
-
-    // Load the FIRST ayah immediately for instant playback
-    getAyahUrl(currentAyah).then(url => {
-      if (url && audioRef.current && !cancelled) {
-        audioRef.current.src = url
-        audioRef.current.load()
-        setLoadingAudio(false)
-      }
-    })
-
-    // Then fetch the rest in background
-    fetchProgressively()
-
+    init()
     return () => { cancelled = true }
   }, [surahData, totalAyah, surahNo, reciterId])
 
-  // Preload next ayah via fetch (browser caches the audio data)
-  const preloadNext = useCallback(async (nextAyahNum) => {
-    const url = await getAyahUrl(nextAyahNum)
-    if (url) fetch(url).catch(() => {})
-  }, [getAyahUrl])
-
-  // ── Audio event listeners ──
+  // ── Event listeners on BOTH pool elements ──
   useEffect(() => {
-    const audio = audioRef.current
-    if (!audio) return
-
-    const onMeta = () => setAyahDuration(audio.duration)
-
-    const onTime = () => {
+    const onTimeUpdate = (idx) => () => {
+      if (activeIdx.current !== idx) return // not the active element
+      const audio = pool.current[idx]
       setAyahTime(audio.currentTime)
-      // Preload next ayah 2 seconds before end
+      setAyahDuration(audio.duration || 0)
+
+      // Pre-load next ayah when ≤2 seconds remain
       const remaining = audio.duration - audio.currentTime
       if (remaining > 0 && remaining <= 2) {
-        const s = stateRef.current
-        if (s.currentAyah < s.totalAyah) preloadNext(s.currentAyah + 1)
+        const next = s.current.currentAyah + 1
+        if (next <= s.current.totalAyah) preloadNext(next)
       }
     }
 
-    const onEnded = () => {
-      const s = stateRef.current
-      const nextNum = s.currentAyah + 1
+    const onEnded = (idx) => () => {
+      if (activeIdx.current !== idx) return
 
-      if (nextNum > s.totalAyah) {
-        if (s.isLooping) {
+      const st = s.current
+      const nextNum = st.currentAyah + 1
+
+      if (nextNum > st.totalAyah) {
+        if (st.isLooping) {
+          // Restart from ayah 1
           setCompletedTime(0)
           setCurrentAyah(1)
           setAyahTime(0)
-          loadAndPlay(1, true)
+          nextLoadedRef.current = 0
+          getAyahUrl(1).then(url => {
+            if (url) {
+              const a = getActive()
+              a.src = url
+              a.load()
+              const h = () => { a.play().catch(() => {}); setIsPlaying(true); a.removeEventListener('canplay', h) }
+              a.addEventListener('canplay', h)
+            }
+          })
         } else {
           setIsPlaying(false)
         }
@@ -225,27 +194,89 @@ export function AudioProvider({ children }) {
       }
 
       // Update completed time
-      const ayahDur = durCacheRef.current[s.currentAyah] || audio.duration || 3
-      setCompletedTime(s.completedTime + ayahDur)
+      const ayahDur = durCacheRef.current[st.currentAyah] || pool.current[idx].duration || 3
+      const newCompleted = st.completedTime + ayahDur
+      setCompletedTime(newCompleted)
       setCurrentAyah(nextNum)
       setAyahTime(0)
-      loadAndPlay(nextNum, true)
+
+      // ── THE KEY: if next ayah is pre-loaded in inactive slot, flip and play instantly ──
+      if (nextLoadedRef.current === nextNum) {
+        activeIdx.current = 1 - activeIdx.current
+        const nextAudio = getActive()
+        nextAudio.play().then(() => setIsPlaying(true)).catch(() => {})
+        nextLoadedRef.current = 0
+
+        // Start pre-loading the one AFTER that
+        if (nextNum + 1 <= st.totalAyah) preloadNext(nextNum + 1)
+      } else {
+        // Fallback: load into current slot (will have a delay)
+        getAyahUrl(nextNum).then(url => {
+          if (url) {
+            const a = getActive()
+            a.src = url
+            a.load()
+            const h = () => { a.play().catch(() => {}); setIsPlaying(true); a.removeEventListener('canplay', h) }
+            a.addEventListener('canplay', h)
+          }
+        })
+      }
     }
 
-    const onError = () => setIsPlaying(false)
+    const onMeta = (idx) => () => {
+      if (activeIdx.current === idx) setAyahDuration(pool.current[idx].duration)
+    }
 
-    audio.addEventListener('loadedmetadata', onMeta)
-    audio.addEventListener('timeupdate', onTime)
-    audio.addEventListener('ended', onEnded)
-    audio.addEventListener('error', onError)
+    const onError = (idx) => () => {
+      if (activeIdx.current === idx) setIsPlaying(false)
+    }
+
+    // Attach to both
+    const handlers = [0, 1].map(idx => ({
+      time: onTimeUpdate(idx), ended: onEnded(idx), meta: onMeta(idx), error: onError(idx),
+    }))
+
+    pool.current.forEach((audio, idx) => {
+      audio.addEventListener('timeupdate', handlers[idx].time)
+      audio.addEventListener('ended', handlers[idx].ended)
+      audio.addEventListener('loadedmetadata', handlers[idx].meta)
+      audio.addEventListener('error', handlers[idx].error)
+    })
 
     return () => {
-      audio.removeEventListener('loadedmetadata', onMeta)
-      audio.removeEventListener('timeupdate', onTime)
-      audio.removeEventListener('ended', onEnded)
-      audio.removeEventListener('error', onError)
+      pool.current.forEach((audio, idx) => {
+        audio.removeEventListener('timeupdate', handlers[idx].time)
+        audio.removeEventListener('ended', handlers[idx].ended)
+        audio.removeEventListener('loadedmetadata', handlers[idx].meta)
+        audio.removeEventListener('error', handlers[idx].error)
+      })
     }
-  }, [preloadNext, loadAndPlay])
+  }, [preloadNext, getAyahUrl])
+
+  // ── Background Playback / Screen Lock Fix ──
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden && s.current.isPlaying) {
+        // We are going to background/lock screen.
+        // Safari/iOS can sometimes suspend audio on lock if we are exactly between tracks.
+        // By having both audio elements loaded, MediaSession keeps us alive.
+        // But let's also ensure the current active audio is explicitly playing.
+        const active = getActive()
+        if (active && active.paused && active.src) {
+           active.play().catch(() => {})
+        }
+      }
+    }
+
+    // iOS Safari specific events for backgrounding
+    window.addEventListener('pagehide', handleVisibility)
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    return () => {
+      window.removeEventListener('pagehide', handleVisibility)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [])
 
   // Track listening
   useEffect(() => {
@@ -259,9 +290,14 @@ export function AudioProvider({ children }) {
   useEffect(() => {
     if (surahData) {
       localStorage.setItem(`quran-position-${surahNo}`, JSON.stringify({ ayah: currentAyah, reciterId }))
-      localStorage.setItem('quran-last-listened', JSON.stringify({ surahNo, ayah: currentAyah, surahName: surahData.surahName }))
+      localStorage.setItem('quran-last-listened', JSON.stringify({
+        surahNo, ayah: currentAyah, surahName: surahData.surahName,
+        surahNameArabic: surahData.surahNameArabic,
+        surahNameTranslation: surahData.surahNameTranslation,
+        totalAyah, reciterId, timestamp: Date.now(),
+      }))
     }
-  }, [currentAyah, reciterId, surahNo, surahData])
+  }, [currentAyah, reciterId, surahNo, surahData, totalAyah])
 
   // ── MediaSession ──
   useEffect(() => {
@@ -271,21 +307,15 @@ export function AudioProvider({ children }) {
       artist: 'Quran App',
       album: surahData.surahNameTranslation || 'Quran',
     })
-    navigator.mediaSession.setActionHandler('play', () => {
-      const a = audioRef.current
-      if (a && a.readyState >= 2) a.play().then(() => setIsPlaying(true)).catch(() => {})
-    })
-    navigator.mediaSession.setActionHandler('pause', () => {
-      audioRef.current?.pause(); setIsPlaying(false)
-    })
+    navigator.mediaSession.setActionHandler('play', () => togglePlay())
+    navigator.mediaSession.setActionHandler('pause', () => togglePlay())
     navigator.mediaSession.setActionHandler('previoustrack', () => prevAyah())
     navigator.mediaSession.setActionHandler('nexttrack', () => nextAyah())
 
     if ('setPositionState' in navigator.mediaSession && totalDuration > 0) {
       try {
         navigator.mediaSession.setPositionState({
-          duration: totalDuration,
-          playbackRate: 1,
+          duration: totalDuration, playbackRate: 1,
           position: Math.min(Math.max(0, currentTime), totalDuration),
         })
       } catch {}
@@ -294,8 +324,7 @@ export function AudioProvider({ children }) {
 
   // ── Public API ──
   const togglePlay = useCallback(() => {
-    const audio = audioRef.current
-    if (!audio) return
+    const audio = getActive()
     if (isPlaying) {
       audio.pause()
       setIsPlaying(false)
@@ -310,18 +339,29 @@ export function AudioProvider({ children }) {
   const goToAyah = useCallback(async (ayahNum) => {
     if (ayahNum < 1 || ayahNum > totalAyah) return
     const wasPlaying = isPlaying
-    audioRef.current?.pause()
+    getActive().pause()
     setIsPlaying(false)
 
-    // Calc completed time from duration cache
     let acc = 0
     for (let i = 1; i < ayahNum; i++) acc += durCacheRef.current[i] || 3
     setCompletedTime(acc)
     setCurrentAyah(ayahNum)
     setAyahTime(0)
+    nextLoadedRef.current = 0
 
-    await loadAndPlay(ayahNum, wasPlaying)
-  }, [totalAyah, isPlaying, loadAndPlay])
+    const url = await getAyahUrl(ayahNum)
+    if (url) {
+      const active = getActive()
+      active.src = url
+      active.load()
+      if (wasPlaying) {
+        const h = () => { active.play().then(() => setIsPlaying(true)).catch(() => {}); active.removeEventListener('canplay', h) }
+        active.addEventListener('canplay', h)
+      }
+      // Pre-load next
+      if (ayahNum < totalAyah) preloadNext(ayahNum + 1)
+    }
+  }, [totalAyah, isPlaying, getAyahUrl, preloadNext])
 
   const nextAyah = useCallback(() => {
     if (currentAyah < totalAyah) goToAyah(currentAyah + 1)
@@ -333,14 +373,10 @@ export function AudioProvider({ children }) {
   }, [currentAyah, goToAyah])
 
   const seekTo = useCallback((globalTime) => {
-    // Find which ayah this time falls into
     let acc = 0
     for (let i = 1; i <= totalAyah; i++) {
       const d = durCacheRef.current[i] || 3
-      if (globalTime < acc + d) {
-        goToAyah(i)
-        return
-      }
+      if (globalTime < acc + d) { goToAyah(i); return }
       acc += d
     }
   }, [totalAyah, goToAyah])
@@ -350,17 +386,16 @@ export function AudioProvider({ children }) {
       if (startAyah !== currentAyah) goToAyah(startAyah)
       return
     }
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = '' }
+    pool.current.forEach(a => { a.pause(); a.src = '' })
+    activeIdx.current = 0
+    nextLoadedRef.current = 0
     setIsPlaying(false)
     setSurahData(data)
     setCurrentAyah(startAyah)
     setReciterId(startReciter)
-    setAyahTime(0)
-    setAyahDuration(0)
-    setCompletedTime(0)
-    setTotalDuration(0)
-    setSecondsListened(0)
-    setUrlsReady(0)
+    setAyahTime(0); setAyahDuration(0)
+    setCompletedTime(0); setTotalDuration(0)
+    setSecondsListened(0); setUrlsReady(0)
   }, [surahData, currentAyah, reciterId, goToAyah])
 
   const value = {
