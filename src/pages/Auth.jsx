@@ -4,7 +4,7 @@ import { useAuth } from '../hooks/useAuth'
 import { BookOpen, Mail, Lock, User, Loader, AlertCircle } from 'lucide-react'
 
 export default function Auth() {
-  const { user, signIn, signUp, loading, isConfigured } = useAuth()
+  const { user, signIn, signUp, signInWithOAuth, loading, isConfigured } = useAuth()
   const [isLogin, setIsLogin] = useState(true)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
