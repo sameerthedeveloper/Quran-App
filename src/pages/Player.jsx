@@ -49,7 +49,21 @@ export default function Player() {
 
   const activeAyahRef = useRef(null)
   const scrollRef = useRef(null)
-  const surahNum = parseInt(surahNo) || 1
+  
+  const [surahNum, setSurahNum] = useState(() => {
+    if (surahNo) return parseInt(surahNo)
+    if (surahData?.surahNo) return surahData.surahNo
+    try {
+      const last = JSON.parse(localStorage.getItem('quran-last-listened'))
+      if (last && last.surahNo) return parseInt(last.surahNo)
+    } catch {}
+    return 1
+  })
+
+  // Sync route changes
+  useEffect(() => {
+    if (surahNo) setSurahNum(parseInt(surahNo))
+  }, [surahNo])
 
   // ── Save prefs whenever they change ──
   useEffect(() => { savePrefs({ showTranslation }) }, [showTranslation])
