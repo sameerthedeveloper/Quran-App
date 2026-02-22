@@ -1,3 +1,5 @@
+import { getAyahAudio, getReciterCode } from './audioSource'
+
 const AUDIO_CACHE_NAME = 'quran-audio-v1'
 const APP_CACHE_NAME = 'quran-app-v1'
 
@@ -67,19 +69,14 @@ export async function deleteCachedAudio(url) {
  * @param {Function} onProgress - callback(cached, total)
  */
 export async function cacheSurah(surahNo, totalAyah, reciterId = 1, onProgress = null) {
-    const API_BASE = 'https://quranapi.pages.dev/api'
     let cached = 0
 
     for (let ayah = 1; ayah <= totalAyah; ayah++) {
         try {
-            const res = await fetch(`${API_BASE}/audio/${surahNo}/${ayah}.json`)
-            const data = await res.json()
-            const reciter = data[String(reciterId)]
-            if (reciter) {
-                const audioUrl = reciter.originalUrl || reciter.url
-                await cacheAudio(audioUrl)
-                cached++
-            }
+            const reciterCode = getReciterCode(reciterId)
+            const audioUrl = getAyahAudio(reciterCode, surahNo, ayah)
+            await cacheAudio(audioUrl)
+            cached++
         } catch (err) {
             console.error(`Error caching ayah ${ayah}:`, err)
         }

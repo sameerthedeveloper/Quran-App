@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react'
 
-const API_BASE = 'https://quranapi.pages.dev/api'
+import { getAyahAudio, getReciterCode } from '../utils/audioSource'
+
 const AudioCtx = createContext(null)
 
 /*
@@ -54,14 +55,12 @@ export function AudioProvider({ children }) {
   // ── Get/fetch ayah URL ──
   const getAyahUrl = useCallback(async (ayahNum) => {
     if (urlCacheRef.current[ayahNum]) return urlCacheRef.current[ayahNum]
-    try {
-      const res = await fetch(`${API_BASE}/${s.current.surahNo}/${ayahNum}.json`)
-      const data = await res.json()
-      const rec = data.audio?.[String(s.current.reciterId)]
-      const url = rec?.originalUrl || rec?.url || null
-      if (url) urlCacheRef.current[ayahNum] = url
-      return url
-    } catch { return null }
+    
+    const reciterCode = getReciterCode(s.current.reciterId)
+    const url = getAyahAudio(reciterCode, s.current.surahNo, ayahNum)
+    
+    urlCacheRef.current[ayahNum] = url
+    return url
   }, [])
 
   // ── Pre-load next ayah into the inactive slot ──
@@ -118,31 +117,58 @@ export function AudioProvider({ children }) {
       if (currentAyah < totalAyah) preloadNext(currentAyah + 1)
 
       // Get durations in background (for timeline)
-      const loader = new Audio()
-      loader.preload = 'metadata'
-      loader.muted = true
-      loader.volume = 0
+      const timelineKey = `quran-timeline-${surahNo}-${reciterId}`
+      const savedTimeline = localStorage.getItem(timelineKey)
+      let hasFullTimeline = false
       let total = 0
 
-      for (let i = 1; i <= totalAyah; i++) {
-        if (cancelled) break
-        if (durCacheRef.current[i]) { total += durCacheRef.current[i]; continue }
-        const u = urlCacheRef.current[i]
-        if (!u) { durCacheRef.current[i] = 3; total += 3; continue }
-        const d = await new Promise(resolve => {
-          const t = setTimeout(() => resolve(3), 3000)
-          loader.onloadedmetadata = () => { clearTimeout(t); resolve(loader.duration || 3) }
-          loader.onerror = () => { clearTimeout(t); resolve(3) }
-          loader.src = u
-          loader.load()
-        })
-        durCacheRef.current[i] = d
-        total += d
+      if (savedTimeline) {
+        try {
+          const parsed = JSON.parse(savedTimeline)
+          // Verify we have all ayahs
+          let allPresent = true
+          for (let i = 1; i <= totalAyah; i++) {
+            if (!parsed[i]) { allPresent = false; break }
+            total += parsed[i]
+          }
+          if (allPresent) {
+            durCacheRef.current = parsed
+            hasFullTimeline = true
+            if (!cancelled) setTotalDuration(total)
+          }
+        } catch (e) {}
       }
-      loader.onloadedmetadata = null; loader.onerror = null
-      loader.src = ''; loader.removeAttribute('src')
 
-      if (!cancelled) setTotalDuration(total)
+      if (!hasFullTimeline) {
+        const loader = new Audio()
+        loader.preload = 'metadata'
+        loader.muted = true
+        loader.volume = 0
+        total = 0
+
+        for (let i = 1; i <= totalAyah; i++) {
+          if (cancelled) break
+          if (durCacheRef.current[i]) { total += durCacheRef.current[i]; continue }
+          const u = urlCacheRef.current[i]
+          if (!u) { durCacheRef.current[i] = 3; total += 3; continue }
+          const d = await new Promise(resolve => {
+            const t = setTimeout(() => resolve(3), 3000)
+            loader.onloadedmetadata = () => { clearTimeout(t); resolve(loader.duration || 3) }
+            loader.onerror = () => { clearTimeout(t); resolve(3) }
+            loader.src = u
+            loader.load()
+          })
+          durCacheRef.current[i] = d
+          total += d
+        }
+        loader.onloadedmetadata = null; loader.onerror = null
+        loader.src = ''; loader.removeAttribute('src')
+
+        if (!cancelled) {
+          setTotalDuration(total)
+          localStorage.setItem(timelineKey, JSON.stringify(durCacheRef.current))
+        }
+      }
     }
 
     init()
