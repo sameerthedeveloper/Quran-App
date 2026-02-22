@@ -3,7 +3,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useQuran } from '../hooks/useQuran'
 import { useOffline } from '../hooks/useOffline'
 import ProgressCard from '../components/ProgressCard'
-import { BookOpen, Clock, Flame, WifiOff, ChevronRight } from 'lucide-react'
+import { BookOpen, Clock, Flame, WifiOff, ChevronRight, Play } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 export default function Home() {
@@ -86,22 +86,39 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Recently Listened */}
-      {lastListened && lastSurah && (
+      {/* Continue Listening */}
+      {lastListened && (lastSurah || lastListened.surahName) && (
         <div className="px-4 mb-5">
-          <h2 className="text-sm font-semibold text-gray-900 mb-2.5">Recently Listened</h2>
+          <h2 className="text-sm font-semibold text-gray-900 mb-2.5">Continue Listening</h2>
           <button
-            onClick={() => navigate(`/player/${lastSurah.surahNo}`)}
-            className="w-full flex items-center gap-3 p-3 bg-white rounded-2xl shadow-sm border border-emerald-50 hover:shadow-md transition-all text-left group"
+            onClick={() => navigate(`/player/${lastListened.surahNo}`)}
+            className="w-full flex items-center gap-3 p-3.5 bg-white rounded-2xl shadow-sm border border-emerald-50 hover:shadow-md transition-all text-left group"
           >
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-white font-arabic text-sm flex-shrink-0">
-              {lastSurah.surahNameArabic?.[0]}
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-white font-arabic text-sm flex-shrink-0">
+              {lastListened.surahNameArabic?.[0] || lastSurah?.surahNameArabic?.[0]}
             </div>
             <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-gray-900 text-sm truncate">{lastSurah.surahName}</h3>
-              <p className="text-xs text-gray-500 truncate">{lastSurah.surahNameTranslation} · Ayah {lastListened.ayah}</p>
+              <h3 className="font-semibold text-gray-900 text-sm truncate">{lastListened.surahName || lastSurah?.surahName}</h3>
+              <p className="text-xs text-gray-500 truncate">
+                {lastListened.surahNameTranslation || lastSurah?.surahNameTranslation} · Ayah {lastListened.ayah}
+                {lastListened.totalAyah ? `/${lastListened.totalAyah}` : ''}
+              </p>
+              {lastListened.timestamp && (
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  {(() => {
+                    const mins = Math.floor((Date.now() - lastListened.timestamp) / 60000)
+                    if (mins < 1) return 'Just now'
+                    if (mins < 60) return `${mins}m ago`
+                    const hrs = Math.floor(mins / 60)
+                    if (hrs < 24) return `${hrs}h ago`
+                    return `${Math.floor(hrs / 24)}d ago`
+                  })()}
+                </p>
+              )}
             </div>
-            <ChevronRight size={16} className="text-gray-400 flex-shrink-0" />
+            <div className="w-9 h-9 rounded-full bg-emerald-50 flex items-center justify-center flex-shrink-0 group-hover:bg-emerald-100 transition-colors">
+              <Play size={14} className="text-emerald-600 ml-0.5" fill="currentColor" />
+            </div>
           </button>
         </div>
       )}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuran } from '../hooks/useQuran'
 import { useOffline } from '../hooks/useOffline'
@@ -8,8 +8,19 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { RECITERS } from '../hooks/useQuran'
 import {
   ArrowLeft, Loader, Play, Pause, SkipBack, SkipForward,
-  Download, Check, Repeat, Settings, ChevronDown, ChevronUp
+  Download, Check, Repeat, Settings, ChevronDown, ChevronUp,
+  BookOpen, Languages, Volume2
 } from 'lucide-react'
+
+// ── Persistent preference helpers ──
+const PREFS_KEY = 'quran-player-prefs'
+const getPrefs = () => {
+  try { return JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') } catch { return {} }
+}
+const savePrefs = (updates) => {
+  const current = getPrefs()
+  localStorage.setItem(PREFS_KEY, JSON.stringify({ ...current, ...updates }))
+}
 
 export default function Player() {
   const { surahNo } = useParams()
@@ -22,19 +33,32 @@ export default function Player() {
     isPlaying, togglePlay, nextAyah, prevAyah, totalAyah,
     setReciterId, isLooping, setIsLooping, goToAyah,
     currentTime, duration, seekTo, loadingAudio, ayahProgress,
+    ayahTime, ayahDuration,
   } = useAudio()
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [isDownloaded, setIsDownloaded] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [showTranslation, setShowTranslation] = useState(true)
-  const [collapsed, setCollapsed] = useState(false)
+
+  // ── Restored from localStorage ──
+  const prefs = getPrefs()
+  const [showTranslation, setShowTranslation] = useState(prefs.showTranslation !== false)
+  const [collapsed, setCollapsed] = useState(prefs.collapsed === true)
+  const [fontSize, setFontSize] = useState(prefs.fontSize || 'normal') // 'small', 'normal', 'large'
+
   const activeAyahRef = useRef(null)
   const scrollRef = useRef(null)
-
   const surahNum = parseInt(surahNo) || 1
 
+  // ── Save prefs whenever they change ──
+  useEffect(() => { savePrefs({ showTranslation }) }, [showTranslation])
+  useEffect(() => { savePrefs({ collapsed }) }, [collapsed])
+  useEffect(() => { savePrefs({ fontSize }) }, [fontSize])
+  useEffect(() => { if (reciterId) savePrefs({ lastReciterId: reciterId }) }, [reciterId])
+  useEffect(() => { if (isLooping !== undefined) savePrefs({ isLooping }) }, [isLooping])
+
+  // ── Load surah + restore position ──
   useEffect(() => {
     const load = async () => {
       if (surahData?.surahNo === surahNum) return
@@ -42,25 +66,57 @@ export default function Player() {
         setLoading(true); setError(null)
         const data = await fetchChapter(surahNum)
         const saved = localStorage.getItem(`quran-position-${surahNum}`)
-        let startAyah = 1, startReciter = 1
-        if (saved) { const p = JSON.parse(saved); startAyah = p.ayah || 1; startReciter = p.reciterId || 1 }
+        const prefs = getPrefs()
+        let startAyah = 1, startReciter = prefs.lastReciterId || 1
+        if (saved) {
+          const p = JSON.parse(saved)
+          startAyah = p.ayah || 1
+          startReciter = p.reciterId || startReciter
+        }
+        // Restore loop state
+        if (prefs.isLooping !== undefined) setIsLooping(prefs.isLooping)
         loadSurah(data, startAyah, startReciter)
       } catch (err) { setError(err.message) }
       finally { setLoading(false) }
     }
     load()
-  }, [surahNum, fetchChapter, loadSurah, surahData?.surahNo])
+  }, [surahNum])
 
-  useEffect(() => { checkDownloaded(surahNum, reciterId).then(setIsDownloaded) }, [surahNum, reciterId, checkDownloaded])
-
+  // ── Save detailed last-listened for Home resume ──
   useEffect(() => {
-    if (activeAyahRef.current) activeAyahRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (surahData && currentAyah) {
+      const data = {
+        surahNo: surahData.surahNo,
+        ayah: currentAyah,
+        surahName: surahData.surahName,
+        surahNameArabic: surahData.surahNameArabic,
+        surahNameTranslation: surahData.surahNameTranslation,
+        totalAyah,
+        reciterId,
+        timestamp: Date.now(),
+      }
+      localStorage.setItem('quran-last-listened', JSON.stringify(data))
+    }
+  }, [surahData, currentAyah, totalAyah, reciterId])
+
+  useEffect(() => { checkDownloaded(surahNum, reciterId).then(setIsDownloaded) }, [surahNum, reciterId])
+
+  // Auto-scroll to active ayah
+  useEffect(() => {
+    if (activeAyahRef.current) {
+      activeAyahRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
   }, [currentAyah])
 
+  // Listening log
   useEffect(() => {
     if (secondsListened > 0 && secondsListened % 30 === 0 && isSupabaseConfigured() && user) {
-      supabase.from('listening_logs').insert({ user_id: user.id, surah: surahData?.surahName || `Surah ${surahNum}`, ayah: currentAyah, seconds_listened: 30 })
-        .then(() => { if (profile) updateProfile({ total_minutes: Math.floor((profile.total_minutes * 60 + 30) / 60) }) })
+      supabase.from('listening_logs').insert({
+        user_id: user.id, surah: surahData?.surahName || `Surah ${surahNum}`,
+        ayah: currentAyah, seconds_listened: 30,
+      }).then(() => {
+        if (profile) updateProfile({ total_minutes: Math.floor((profile.total_minutes * 60 + 30) / 60) })
+      })
     }
   }, [secondsListened])
 
@@ -76,6 +132,9 @@ export default function Player() {
   }
 
   const surahPercent = duration > 0 ? Math.min((currentTime / duration) * 100, 100) : 0
+
+  const arabicSize = fontSize === 'small' ? 'text-base' : fontSize === 'large' ? 'text-2xl' : 'text-lg'
+  const engSize = fontSize === 'small' ? 'text-[11px]' : fontSize === 'large' ? 'text-[15px]' : 'text-[13px]'
 
   if (loading) return (
     <div className="flex-1 flex items-center justify-center min-h-screen">
@@ -104,35 +163,59 @@ export default function Player() {
         <button onClick={() => navigate(-1)} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800">
           <ArrowLeft size={18} /> Back
         </button>
-        <button onClick={() => setShowSettings(!showSettings)}
-          className={`p-2 rounded-lg transition-colors ${showSettings ? 'bg-emerald-100 text-emerald-700' : 'text-gray-400'}`}>
-          <Settings size={17} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button onClick={() => setShowSettings(!showSettings)}
+            className={`p-2 rounded-lg transition-colors ${showSettings ? 'bg-emerald-100 text-emerald-700' : 'text-gray-400 hover:text-gray-600'}`}>
+            <Settings size={17} />
+          </button>
+        </div>
       </div>
 
-      {/* ── Settings ── */}
+      {/* ── Settings Panel ── */}
       {showSettings && (
-        <div className="flex-shrink-0 mx-4 mb-2 p-3 bg-white rounded-xl border border-emerald-100 shadow-sm animate-fade-in">
-          <p className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-2">Reciter</p>
-          <div className="flex flex-wrap gap-1.5 mb-3">
-            {RECITERS.map(r => (
-              <button key={r.id} onClick={() => setReciterId(r.id)}
-                className={`px-2.5 py-1 text-[11px] rounded-full ${r.id === reciterId ? 'bg-emerald-600 text-white font-medium' : 'bg-gray-100 text-gray-600 hover:bg-emerald-50'}`}>
-                {r.name.split(' ').slice(-2).join(' ')}
-              </button>
-            ))}
+        <div className="flex-shrink-0 mx-4 mb-2 p-3 bg-white rounded-xl border border-emerald-100 shadow-sm space-y-3 animate-fade-in">
+          {/* Reciter */}
+          <div>
+            <p className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-1.5">
+              <Volume2 size={10} className="inline mr-1" /> Reciter
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {RECITERS.map(r => (
+                <button key={r.id} onClick={() => setReciterId(r.id)}
+                  className={`px-2.5 py-1 text-[11px] rounded-full transition-colors ${r.id === reciterId ? 'bg-emerald-600 text-white font-medium' : 'bg-gray-100 text-gray-600 hover:bg-emerald-50'}`}>
+                  {r.name.split(' ').slice(-2).join(' ')}
+                </button>
+              ))}
+            </div>
           </div>
+
+          {/* Font Size */}
+          <div>
+            <p className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-1.5">
+              <BookOpen size={10} className="inline mr-1" /> Font Size
+            </p>
+            <div className="flex gap-1.5">
+              {[{ id: 'small', label: 'Small' }, { id: 'normal', label: 'Normal' }, { id: 'large', label: 'Large' }].map(s => (
+                <button key={s.id} onClick={() => setFontSize(s.id)}
+                  className={`px-3 py-1 text-[11px] rounded-full transition-colors ${fontSize === s.id ? 'bg-emerald-600 text-white font-medium' : 'bg-gray-100 text-gray-600 hover:bg-emerald-50'}`}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Toggles */}
           <div className="flex gap-2 flex-wrap">
             <button onClick={() => setShowTranslation(!showTranslation)}
-              className={`px-3 py-1.5 text-[11px] rounded-full ${showTranslation ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
-              Translation {showTranslation ? 'On' : 'Off'}
+              className={`px-3 py-1.5 text-[11px] rounded-full flex items-center gap-1 transition-colors ${showTranslation ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+              <Languages size={10} /> Translation {showTranslation ? 'On' : 'Off'}
             </button>
             <button onClick={() => setIsLooping(!isLooping)}
-              className={`px-3 py-1.5 text-[11px] rounded-full flex items-center gap-1 ${isLooping ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
-              <Repeat size={10} /> Repeat
+              className={`px-3 py-1.5 text-[11px] rounded-full flex items-center gap-1 transition-colors ${isLooping ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+              <Repeat size={10} /> Repeat {isLooping ? 'On' : 'Off'}
             </button>
             <button onClick={handleDownload} disabled={!!downloading || isDownloaded}
-              className={`px-3 py-1.5 text-[11px] rounded-full flex items-center gap-1 ${isDownloaded ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+              className={`px-3 py-1.5 text-[11px] rounded-full flex items-center gap-1 transition-colors ${isDownloaded ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
               {downloading ? <Loader size={10} className="animate-spin" /> : isDownloaded ? <Check size={10} /> : <Download size={10} />}
               {isDownloaded ? 'Saved' : 'Offline'}
             </button>
@@ -198,7 +281,7 @@ export default function Player() {
       )}
 
       {/* ── Ayah Reading Area ── */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden" style={{ paddingBottom: '140px' }}>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden" style={{ paddingBottom: '160px' }}>
         <div className="px-3 py-1">
           {surahData.arabic1?.map((text, i) => {
             const num = i + 1
@@ -218,11 +301,11 @@ export default function Player() {
                     active ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-500'
                   }`}>{num}</div>
                   <div className="flex-1 min-w-0">
-                    <p className={`font-arabic text-lg leading-[2] text-right ${active ? 'text-emerald-900' : 'text-gray-800'}`} dir="rtl">
+                    <p className={`font-arabic ${arabicSize} leading-[2] text-right ${active ? 'text-emerald-900' : 'text-gray-800'}`} dir="rtl">
                       {text}<span className="text-emerald-400 text-sm mx-1">﴿{num}﴾</span>
                     </p>
                     {showTranslation && surahData.english?.[i] && (
-                      <p className={`text-[13px] leading-relaxed mt-1.5 ${active ? 'text-emerald-700' : 'text-gray-500'}`}>{surahData.english[i]}</p>
+                      <p className={`${engSize} leading-relaxed mt-1.5 ${active ? 'text-emerald-700' : 'text-gray-500'}`}>{surahData.english[i]}</p>
                     )}
                   </div>
                 </div>
@@ -239,7 +322,7 @@ export default function Player() {
         </div>
       </div>
 
-      {/* ── Bottom Controls ── */}
+      {/* ── Bottom Player Controls ── */}
       <div className="flex-shrink-0 bg-white/95 backdrop-blur-xl border-t border-gray-100 shadow-[0_-2px_16px_rgba(0,0,0,0.05)]">
         {downloading && (
           <div className="px-4 pt-2">
@@ -250,32 +333,51 @@ export default function Player() {
           </div>
         )}
 
-        {/* Full surah progress slider */}
-        <div className="px-4 pt-2">
-          <input type="range" min={0} max={duration || 0} value={currentTime}
-            onChange={(e) => seekTo(parseFloat(e.target.value))} step={0.5} className="w-full" />
-          <div className="flex justify-between text-[10px] text-gray-400 -mt-0.5 px-0.5">
+        {/* Surah progress slider */}
+        <div className="px-4 pt-2.5">
+          <input type="range" min={0} max={duration || 1} value={currentTime}
+            onChange={(e) => seekTo(parseFloat(e.target.value))} step={0.5}
+            className="w-full h-1 appearance-none bg-gray-200 rounded-full outline-none cursor-pointer
+              [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3
+              [&::-webkit-slider-thumb]:bg-emerald-600 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:shadow-md" />
+          <div className="flex justify-between text-[10px] text-gray-400 mt-0.5 px-0.5">
             <span>{fmt(currentTime)}</span>
+            <span className="text-emerald-500 font-medium">Ayah {currentAyah}/{totalAyah}</span>
             <span>{fmt(duration)}</span>
           </div>
         </div>
 
-        <div className="flex items-center justify-between px-5 pb-3 pt-0.5">
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-gray-900">Ayah {currentAyah} <span className="font-normal text-gray-400">/ {totalAyah}</span></p>
-            <p className="text-[10px] text-gray-400 truncate">{RECITERS.find(r => r.id === reciterId)?.name}</p>
-          </div>
-          <div className="flex items-center gap-2.5">
-            <button onClick={prevAyah} disabled={currentAyah <= 1} className="p-1.5 text-gray-600 disabled:text-gray-300"><SkipBack size={18} fill="currentColor" /></button>
-            <button onClick={togglePlay} disabled={loadingAudio}
-              className="w-12 h-12 flex items-center justify-center bg-gradient-to-br from-emerald-500 to-emerald-700 text-white rounded-full shadow-md active:scale-95 disabled:opacity-60">
-              {loadingAudio ? <Loader size={18} className="animate-spin" /> : isPlaying ? <Pause size={22} fill="currentColor" /> : <Play size={22} fill="currentColor" className="ml-0.5" />}
-            </button>
-            <button onClick={nextAyah} disabled={currentAyah >= totalAyah && !isLooping} className="p-1.5 text-gray-600 disabled:text-gray-300"><SkipForward size={18} fill="currentColor" /></button>
-          </div>
-          <div className="flex-1 flex justify-end">
-            <button onClick={() => setIsLooping(!isLooping)} className={`p-1.5 rounded-full ${isLooping ? 'text-emerald-600' : 'text-gray-300'}`}><Repeat size={15} /></button>
-          </div>
+        {/* Main Controls */}
+        <div className="flex items-center justify-center gap-4 px-5 pb-3 pt-1">
+          <button onClick={() => setIsLooping(!isLooping)}
+            className={`p-2 rounded-full transition-colors ${isLooping ? 'text-emerald-600 bg-emerald-50' : 'text-gray-300 hover:text-gray-500'}`}>
+            <Repeat size={16} />
+          </button>
+
+          <button onClick={prevAyah} disabled={currentAyah <= 1}
+            className="p-2 text-gray-600 disabled:text-gray-300 hover:text-emerald-600 transition-colors">
+            <SkipBack size={22} fill="currentColor" />
+          </button>
+
+          <button onClick={togglePlay} disabled={loadingAudio}
+            className="w-14 h-14 flex items-center justify-center bg-gradient-to-br from-emerald-500 to-emerald-700 text-white rounded-full shadow-lg active:scale-95 disabled:opacity-60 transition-transform">
+            {loadingAudio
+              ? <Loader size={22} className="animate-spin" />
+              : isPlaying
+                ? <Pause size={26} fill="currentColor" />
+                : <Play size={26} fill="currentColor" className="ml-0.5" />
+            }
+          </button>
+
+          <button onClick={nextAyah} disabled={currentAyah >= totalAyah && !isLooping}
+            className="p-2 text-gray-600 disabled:text-gray-300 hover:text-emerald-600 transition-colors">
+            <SkipForward size={22} fill="currentColor" />
+          </button>
+
+          <button onClick={() => setShowSettings(!showSettings)}
+            className={`p-2 rounded-full transition-colors ${showSettings ? 'text-emerald-600 bg-emerald-50' : 'text-gray-300 hover:text-gray-500'}`}>
+            <Settings size={16} />
+          </button>
         </div>
       </div>
     </div>
