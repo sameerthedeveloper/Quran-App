@@ -100,7 +100,7 @@ export async function cacheSurah(surahNo, totalAyah, reciterId = 1, onProgress =
         console.error('Error saving download metadata:', err)
     }
 
-    return cached
+    return cachedSeconds
 }
 
 /**
