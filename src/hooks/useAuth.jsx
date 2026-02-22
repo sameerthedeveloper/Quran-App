@@ -116,6 +116,16 @@ export function AuthProvider({ children }) {
         return { data, error }
     }, [user])
 
+    const signInWithOAuth = useCallback(async (provider) => {
+        if (!isSupabaseConfigured()) return { error: { message: 'Supabase not configured' } }
+        return supabase.auth.signInWithOAuth({
+            provider,
+            options: {
+                redirectTo: window.location.origin
+            }
+        })
+    }, [])
+
     const value = {
         user,
         profile,
@@ -124,6 +134,7 @@ export function AuthProvider({ children }) {
         signIn,
         signOut,
         updateProfile,
+        signInWithOAuth,
         isConfigured: isSupabaseConfigured(),
     }
 

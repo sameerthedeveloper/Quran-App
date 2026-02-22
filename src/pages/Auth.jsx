@@ -137,6 +137,45 @@ export default function Auth() {
           </button>
         </form>
 
+        <div className="mt-6">
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-border"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-surface-card text-muted">Or continue with</span>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-3">
+            <button
+              type="button"
+              onClick={() => signInWithOAuth('google')}
+              disabled={submitting || !isConfigured}
+              className="w-full flex items-center justify-center gap-3 py-2.5 px-4 bg-white border border-gray-200 rounded-xl text-gray-700 font-medium hover:bg-gray-50 hover:border-gray-300 transition-all active:scale-[0.98] disabled:opacity-50"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+              </svg>
+              Google
+            </button>
+            <button
+              type="button"
+              onClick={() => signInWithOAuth('apple')}
+              disabled={submitting || !isConfigured}
+              className="w-full flex items-center justify-center gap-3 py-2.5 px-4 bg-black border border-black rounded-xl text-white font-medium hover:bg-gray-900 shadow-sm transition-all active:scale-[0.98] disabled:opacity-50"
+            >
+              <svg className="w-5 h-5 text-white fill-current" viewBox="0 0 24 24">
+                <path d="M16.365 1.43c0 1.14-.493 2.27-1.177 3.08-.74.887-1.99 1.57-2.987 1.57-.12 0-.23-.02-.3-.03-.01-.06-.01-.13-.01-.22 0-1.22.56-2.31 1.28-3.1.68-.76 1.83-1.42 2.82-1.42.15 0 .28.02.38.03.01.07.01.14.01.21zM17.845 16.7c-.45 1.4-1.895 4.39-3.882 4.39-.75 0-1.39-.33-2.146-.69-.74-.35-1.572-.73-2.733-.73-1.166 0-1.972.37-2.707.72-.746.35-1.385.69-2.235.69-2.074 0-3.328-2.92-3.83-4.32-.823-2.28-1.04-5.32-.142-7.51.528-1.28 1.493-2.48 2.894-3.15.93-.45 1.956-.67 2.924-.67 1.378 0 2.476.5 3.513 1.05.65.34 1.25.66 1.77.66.505 0 1.076-.31 1.73-.65 1.05-.53 2.19-1.07 3.636-1.03 1.205.03 2.42.38 3.398 1.11.96.72 1.63 1.76 1.815 2.9-.06.03-1.666.95-1.685 2.89-.02 2.12 1.68 2.95 1.782 3.01-.04.14-.62 2.15-1.905 4.29z"/>
+              </svg>
+              Apple
+            </button>
+          </div>
+        </div>
+
         {/* Toggle */}
         <p className="text-center text-sm text-muted mt-5">
           {isLogin ? "Don't have an account? " : 'Already have an account? '}
