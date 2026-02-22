@@ -36,6 +36,18 @@ export function useQuran() {
             const res = await fetch(`${API_BASE}/${surahNo}.json`)
             if (!res.ok) throw new Error(`Failed to fetch surah ${surahNo}`)
             const data = await res.json()
+
+            // Fetch Tamil translation asynchronously
+            try {
+                const tamilRes = await fetch(`https://quranenc.com/api/v1/translation/sura/tamil_baqavi/${surahNo}`)
+                if (tamilRes.ok) {
+                    const tamilData = await tamilRes.json()
+                    data.tamil = tamilData.result.map(aya => aya.translation.replace(/^\d+\.\s*/, '')) // Remove leading number e.g. "1. "
+                }
+            } catch (err) {
+                console.error("Failed to load Tamil translation", err)
+            }
+
             return { ...data, surahNo }
         } catch (err) {
             console.error('Error fetching chapter:', err)

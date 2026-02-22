@@ -44,6 +44,7 @@ export default function Player() {
   // ── Restored from localStorage ──
   const prefs = getPrefs()
   const [showTranslation, setShowTranslation] = useState(prefs.showTranslation !== false)
+  const [transLang, setTransLang] = useState(prefs.transLang || 'english') // 'english' or 'tamil'
   const [collapsed, setCollapsed] = useState(prefs.collapsed === true)
   const [fontSize, setFontSize] = useState(prefs.fontSize || 'normal') // 'small', 'normal', 'large'
 
@@ -67,6 +68,7 @@ export default function Player() {
 
   // ── Save prefs whenever they change ──
   useEffect(() => { savePrefs({ showTranslation }) }, [showTranslation])
+  useEffect(() => { savePrefs({ transLang }) }, [transLang])
   useEffect(() => { savePrefs({ collapsed }) }, [collapsed])
   useEffect(() => { savePrefs({ fontSize }) }, [fontSize])
   useEffect(() => { if (reciterId) savePrefs({ lastReciterId: reciterId }) }, [reciterId])
@@ -218,6 +220,23 @@ export default function Player() {
             </div>
           </div>
 
+          {/* Extra Settings */}
+          {showTranslation && (
+            <div>
+              <p className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-1.5">
+                <Languages size={10} className="inline mr-1" /> Translation Language
+              </p>
+              <div className="flex gap-1.5 mb-3">
+                {[{ id: 'english', label: 'English' }, { id: 'tamil', label: 'Tamil' }].map(l => (
+                  <button key={l.id} onClick={() => setTransLang(l.id)}
+                    className={`px-3 py-1 text-[11px] rounded-full transition-colors ${transLang === l.id ? 'bg-emerald-600 text-white font-medium' : 'bg-gray-100 text-gray-600 hover:bg-emerald-50'}`}>
+                    {l.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Toggles */}
           <div className="flex gap-2 flex-wrap">
             <button onClick={() => setShowTranslation(!showTranslation)}
@@ -318,8 +337,10 @@ export default function Player() {
                     <p className={`font-arabic ${arabicSize} leading-[2] text-right ${active ? 'text-emerald-900' : 'text-gray-800'}`} dir="rtl">
                       {text}<span className="text-emerald-400 text-sm mx-1">﴿{num}﴾</span>
                     </p>
-                    {showTranslation && surahData.english?.[i] && (
-                      <p className={`${engSize} leading-relaxed mt-1.5 ${active ? 'text-emerald-700' : 'text-gray-500'}`}>{surahData.english[i]}</p>
+                    {showTranslation && (
+                      <p className={`${engSize} leading-relaxed mt-1.5 ${active ? 'text-emerald-700' : 'text-gray-500'}`}>
+                        {transLang === 'tamil' ? surahData.tamil?.[i] : surahData.english?.[i]}
+                      </p>
                     )}
                   </div>
                 </div>

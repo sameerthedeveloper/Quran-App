@@ -1,8 +1,10 @@
+import { useState, useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import { AudioProvider } from './hooks/useAudio'
 import BottomNav from './components/BottomNav'
 import MiniPlayer from './components/MiniPlayer'
+import SplashScreen from './components/SplashScreen'
 import Auth from './pages/Auth'
 import Home from './pages/Home'
 import SurahList from './pages/SurahList'
@@ -28,8 +30,16 @@ function ProtectedRoute({ children }) {
 }
 
 function AppLayout() {
+  const [showSplash, setShowSplash] = useState(true)
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShowSplash(false), 2000)
+    return () => clearTimeout(timer)
+  }, [])
+
   return (
     <div className="min-h-screen bg-background flex flex-col max-w-lg mx-auto relative w-full overflow-x-hidden">
+      {showSplash && <SplashScreen />}
       <Routes>
         <Route path="/auth" element={<Auth />} />
         <Route
