@@ -116,16 +116,16 @@ export function AudioProvider({ children }) {
       // Pre-load next ayah
       if (currentAyah < totalAyah) preloadNext(currentAyah + 1)
 
-      // Get durations in background (for timeline)
+      // ── Timeline Caching (Local -> Supabase -> Native Probe) ──
       const timelineKey = `quran-timeline-${surahNo}-${reciterId}`
       const savedTimeline = localStorage.getItem(timelineKey)
       let hasFullTimeline = false
       let total = 0
 
+      // 1. Try Local Storage
       if (savedTimeline) {
         try {
           const parsed = JSON.parse(savedTimeline)
-          // Verify we have all ayahs
           let allPresent = true
           for (let i = 1; i <= totalAyah; i++) {
             if (!parsed[i]) { allPresent = false; break }
@@ -139,7 +139,37 @@ export function AudioProvider({ children }) {
         } catch (e) {}
       }
 
-      if (!hasFullTimeline) {
+      // 2. Try Supabase
+      if (!hasFullTimeline && isSupabaseConfigured()) {
+        try {
+          const { data, error } = await supabase
+            .from('surah_timelines')
+            .select('durations')
+            .eq('surah_no', surahNo)
+            .eq('reciter_id', reciterId)
+            .maybeSingle()
+            
+          if (!error && data?.durations) {
+            let allPresent = true
+            total = 0
+            for (let i = 1; i <= totalAyah; i++) {
+              if (!data.durations[i]) { allPresent = false; break }
+              total += data.durations[i]
+            }
+            if (allPresent) {
+              durCacheRef.current = data.durations
+              hasFullTimeline = true
+              if (!cancelled) {
+                setTotalDuration(total)
+                localStorage.setItem(timelineKey, JSON.stringify(durCacheRef.current))
+              }
+            }
+          }
+        } catch (err) { console.error('Supabase timeline fetch failed:', err) }
+      }
+
+      // 3. Fallback to Native Probing
+      if (!hasFullTimeline && !cancelled) {
         const loader = new Audio()
         loader.preload = 'metadata'
         loader.muted = true
@@ -167,6 +197,18 @@ export function AudioProvider({ children }) {
         if (!cancelled) {
           setTotalDuration(total)
           localStorage.setItem(timelineKey, JSON.stringify(durCacheRef.current))
+          
+          // Background upload to Supabase for other users
+          if (isSupabaseConfigured()) {
+             supabase
+              .from('surah_timelines')
+              .upsert({
+                surah_no: surahNo,
+                reciter_id: reciterId,
+                durations: durCacheRef.current
+              })
+              .catch(console.error)
+          }
         }
       }
     }

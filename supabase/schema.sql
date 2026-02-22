@@ -98,3 +98,34 @@ create index if not exists idx_reflections_created on public.reflections(created
 -- REALTIME (Enable for reflections feed)
 -- ============================================
 alter publication supabase_realtime add table public.reflections;
+
+-- ============================================
+-- SURAH TIMELINES TABLE
+-- ============================================
+-- Caches timeline durations (metadata) for gapless playback
+-- Global cache shared across all users
+create table if not exists public.surah_timelines (
+  surah_no integer not null,
+  reciter_id integer not null,
+  durations jsonb not null,
+  created_at timestamptz not null default now(),
+  primary key (surah_no, reciter_id)
+);
+
+-- Enable RLS
+alter table public.surah_timelines enable row level security;
+
+-- Anyone can read timelines
+create policy "Anyone can read timelines"
+  on public.surah_timelines for select
+  using (true);
+
+-- Authenticated users can insert/update timelines if they don't exist
+create policy "Authenticated users can insert timelines"
+  on public.surah_timelines for insert
+  with check (auth.role() = 'authenticated');
+
+create policy "Authenticated users can update timelines"
+  on public.surah_timelines for update
+  using (auth.role() = 'authenticated');
+  
