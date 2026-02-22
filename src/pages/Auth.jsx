@@ -147,7 +147,7 @@ export default function Auth() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-3">
+          <div className="mt-6">
             <button
               type="button"
               onClick={() => signInWithOAuth('google')}
@@ -161,17 +161,6 @@ export default function Auth() {
                 <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
               </svg>
               Google
-            </button>
-            <button
-              type="button"
-              onClick={() => signInWithOAuth('apple')}
-              disabled={submitting || !isConfigured}
-              className="w-full flex items-center justify-center gap-3 py-2.5 px-4 bg-black border border-black rounded-xl text-white font-medium hover:bg-gray-900 shadow-sm transition-all active:scale-[0.98] disabled:opacity-50"
-            >
-              <svg className="w-5 h-5 text-white fill-current" viewBox="0 0 24 24">
-                <path d="M16.365 1.43c0 1.14-.493 2.27-1.177 3.08-.74.887-1.99 1.57-2.987 1.57-.12 0-.23-.02-.3-.03-.01-.06-.01-.13-.01-.22 0-1.22.56-2.31 1.28-3.1.68-.76 1.83-1.42 2.82-1.42.15 0 .28.02.38.03.01.07.01.14.01.21zM17.845 16.7c-.45 1.4-1.895 4.39-3.882 4.39-.75 0-1.39-.33-2.146-.69-.74-.35-1.572-.73-2.733-.73-1.166 0-1.972.37-2.707.72-.746.35-1.385.69-2.235.69-2.074 0-3.328-2.92-3.83-4.32-.823-2.28-1.04-5.32-.142-7.51.528-1.28 1.493-2.48 2.894-3.15.93-.45 1.956-.67 2.924-.67 1.378 0 2.476.5 3.513 1.05.65.34 1.25.66 1.77.66.505 0 1.076-.31 1.73-.65 1.05-.53 2.19-1.07 3.636-1.03 1.205.03 2.42.38 3.398 1.11.96.72 1.63 1.76 1.815 2.9-.06.03-1.666.95-1.685 2.89-.02 2.12 1.68 2.95 1.782 3.01-.04.14-.62 2.15-1.905 4.29z"/>
-              </svg>
-              Apple
             </button>
           </div>
         </div>
