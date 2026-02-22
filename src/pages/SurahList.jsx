@@ -1,11 +1,16 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuran } from '../hooks/useQuran'
+import { useOffline } from '../hooks/useOffline'
+import { useAudio } from '../hooks/useAudio'
 import SurahCard from '../components/SurahCard'
-import { Search, Loader, BookOpen, AlertCircle } from 'lucide-react'
+import { Search, Loader, BookOpen, AlertCircle, Download, Check, X } from 'lucide-react'
 
 export default function SurahList() {
   const { surahs, loading, error, refetch } = useQuran()
+  const { reciterId } = useAudio()
+  const { downloadingAll, downloadAllSurahs } = useOffline()
   const [search, setSearch] = useState('')
+  const [allDownloaded, setAllDownloaded] = useState(false)
 
   const filtered = useMemo(() => {
     if (!search.trim()) return surahs
@@ -18,13 +23,44 @@ export default function SurahList() {
     )
   }, [surahs, search])
 
+  // Optional: quickly check if we need to show "All Downloaded" (can be heavy, checking all 114, so we evaluate simple flags or just rely on the button action)
+  
   return (
     <div className="flex-1 pb-24 animate-fade-in">
       {/* Header */}
       <div className="px-5 pt-6 pb-2">
-        <div className="flex items-center gap-2 mb-1">
-          <BookOpen size={22} className="text-primary" />
-          <h1 className="text-xl font-bold text-foreground">Holy Quran</h1>
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <BookOpen size={22} className="text-primary" />
+            <h1 className="text-xl font-bold text-foreground">Holy Quran</h1>
+          </div>
+          
+          {/* Download All Button */}
+          {!loading && !error && surahs.length > 0 && (
+            <button
+              onClick={() => {
+                if (!downloadingAll) downloadAllSurahs(surahs, reciterId)
+              }}
+              disabled={!!downloadingAll}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                downloadingAll
+                  ? 'bg-emerald-50 text-emerald-600'
+                  : 'bg-surface-card border border-border text-foreground hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200'
+              }`}
+            >
+              {downloadingAll ? (
+                <>
+                  <Loader size={14} className="animate-spin" />
+                  <span>{Math.round((downloadingAll.current / downloadingAll.total) * 100)}%</span>
+                </>
+              ) : (
+                <>
+                  <Download size={14} />
+                  <span>Download All</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
         <p className="text-sm text-muted">114 Surahs · Choose a Surah to listen</p>
       </div>

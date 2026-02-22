@@ -4,6 +4,8 @@ import { isSurahDownloaded, cacheSurah, deleteSurahCache } from '../utils/cacheM
 export function useOffline() {
     const [isOnline, setIsOnline] = useState(navigator.onLine)
     const [downloading, setDownloading] = useState(null) // { surahNo, progress, total }
+    const [downloadingAll, setDownloadingAll] = useState(null) // { current, total }
+    const cancelRef = useRef(false)
 
     useEffect(() => {
         const handleOnline = () => setIsOnline(true)
@@ -15,6 +17,7 @@ export function useOffline() {
         return () => {
             window.removeEventListener('online', handleOnline)
             window.removeEventListener('offline', handleOffline)
+            cancelRef.current = true
         }
     }, [])
 
@@ -33,6 +36,39 @@ export function useOffline() {
         return cached
     }, [])
 
+    const downloadAllSurahs = useCallback(async (surahs, reciterId = 1) => {
+        cancelRef.current = false
+        if (!isOnline) return
+
+        let toDownload = []
+        for (const surah of surahs) {
+            const isDownloaded = await isSurahDownloaded(surah.surahNo, reciterId)
+            if (!isDownloaded) toDownload.push(surah)
+        }
+
+        if (toDownload.length === 0) return
+
+        setDownloadingAll({ current: 0, total: toDownload.length })
+
+        for (let i = 0; i < toDownload.length; i++) {
+            if (cancelRef.current) break
+            const surah = toDownload[i]
+            setDownloadingAll({ current: i + 1, total: toDownload.length })
+            setDownloading({ surahNo: surah.surahNo, progress: 0, total: surah.totalAyah })
+
+            await cacheSurah(surah.surahNo, surah.totalAyah, reciterId, (progress, total) => {
+                if (!cancelRef.current) {
+                    setDownloading({ surahNo: surah.surahNo, progress, total })
+                }
+            })
+        }
+
+        if (!cancelRef.current) {
+            setDownloading(null)
+            setDownloadingAll(null)
+        }
+    }, [isOnline])
+
     const removeSurah = useCallback(async (surahNo, reciterId = 1) => {
         return deleteSurahCache(surahNo, reciterId)
     }, [])
@@ -40,8 +76,10 @@ export function useOffline() {
     return {
         isOnline,
         downloading,
+        downloadingAll,
         checkDownloaded,
         downloadSurah,
+        downloadAllSurahs,
         removeSurah,
     }
 }
