@@ -1,4 +1,5 @@
 import { getAyahAudio, getReciterCode } from './audioSource'
+import { ensureAyahDuration, getSurahTotalDuration } from './ensureDuration'
 
 const AUDIO_CACHE_NAME = 'quran-audio-v1'
 const APP_CACHE_NAME = 'quran-app-v1'
@@ -66,21 +67,25 @@ export async function deleteCachedAudio(url) {
  * @param {number} surahNo
  * @param {number} totalAyah
  * @param {number} reciterId - 1-5
- * @param {Function} onProgress - callback(cached, total)
+ * @param {Function} onProgress - callback(cachedSeconds, totalSeconds)
  */
 export async function cacheSurah(surahNo, totalAyah, reciterId = 1, onProgress = null) {
-    let cached = 0
+    let cachedSeconds = 0
+    // Try to get actual duration if available, else fallback to ayah count scale
+    let totalSeconds = await getSurahTotalDuration(reciterId, surahNo, totalAyah) || totalAyah
 
     for (let ayah = 1; ayah <= totalAyah; ayah++) {
         try {
             const reciterCode = getReciterCode(reciterId)
             const audioUrl = getAyahAudio(reciterCode, surahNo, ayah)
             await cacheAudio(audioUrl)
-            cached++
+
+            const dur = await ensureAyahDuration(reciterId, surahNo, ayah)
+            cachedSeconds += dur
         } catch (err) {
             console.error(`Error caching ayah ${ayah}:`, err)
         }
-        if (onProgress) onProgress(cached, totalAyah)
+        if (onProgress) onProgress(cachedSeconds, totalSeconds)
     }
 
     // Also store metadata so we know this surah is downloaded

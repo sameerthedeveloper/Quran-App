@@ -1,6 +1,9 @@
 import { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react'
 
 import { getAyahAudio, getReciterCode } from '../utils/audioSource'
+import { ensureAyahDuration } from '../utils/ensureDuration'
+import { calculateSurahProgress, calculateSeekTarget } from '../utils/gaplessTiming'
+import { supabase, isSupabaseConfigured } from '../lib/supabase'
 
 const AudioCtx = createContext(null)
 
@@ -30,7 +33,6 @@ export function AudioProvider({ children }) {
 
   const urlCacheRef = useRef({})
   const durCacheRef = useRef({})
-  const [completedTime, setCompletedTime] = useState(0)
   const [totalDuration, setTotalDuration] = useState(0)
   const [urlsReady, setUrlsReady] = useState(0)
 
@@ -38,14 +40,22 @@ export function AudioProvider({ children }) {
   const s = useRef({})
   s.current = {
     currentAyah, totalAyah: surahData?.totalAyah || 0,
-    isLooping, completedTime, isPlaying, reciterId,
+    isLooping, isPlaying, reciterId,
     surahNo: surahData?.surahNo || 1,
   }
 
   const totalAyah = surahData?.totalAyah || 0
   const surahNo = surahData?.surahNo || 1
-  const currentTime = completedTime + ayahTime
-  const duration = totalDuration
+  
+  const { elapsedSurahSeconds, totalSurahDuration, progress: surahProgress } = calculateSurahProgress(
+    durCacheRef.current,
+    currentAyah,
+    ayahTime,
+    totalAyah
+  )
+
+  const currentTime = elapsedSurahSeconds
+  const duration = totalSurahDuration > 0 ? totalSurahDuration : totalDuration
   const ayahProgress = ayahDuration > 0 ? Math.max(0, Math.min(100, (ayahTime / ayahDuration) * 100)) : 0
 
   // Get active and inactive audio elements
@@ -168,44 +178,42 @@ export function AudioProvider({ children }) {
         } catch (err) { console.error('Supabase timeline fetch failed:', err) }
       }
 
-      // 3. Fallback to Native Probing
+      // 3. Fallback to duration extractor (IndexedDB -> Audio metadata)
       if (!hasFullTimeline && !cancelled) {
-        const loader = new Audio()
-        loader.preload = 'metadata'
-        loader.muted = true
-        loader.volume = 0
-        total = 0
+        let total = 0
+        const durations = {}
 
-        for (let i = 1; i <= totalAyah; i++) {
+        // We can do this in parallel batches for performance
+        const batchSize = 10
+        for (let i = 0; i < Math.ceil(totalAyah / batchSize); i++) {
           if (cancelled) break
-          if (durCacheRef.current[i]) { total += durCacheRef.current[i]; continue }
-          const u = urlCacheRef.current[i]
-          if (!u) { durCacheRef.current[i] = 3; total += 3; continue }
-          const d = await new Promise(resolve => {
-            const t = setTimeout(() => resolve(3), 3000)
-            loader.onloadedmetadata = () => { clearTimeout(t); resolve(loader.duration || 3) }
-            loader.onerror = () => { clearTimeout(t); resolve(3) }
-            loader.src = u
-            loader.load()
-          })
-          durCacheRef.current[i] = d
-          total += d
+          const promises = []
+          for (let j = 0; j < batchSize; j++) {
+            const ayah = i * batchSize + j + 1
+            if (ayah > totalAyah) break
+            promises.push(
+              ensureAyahDuration(reciterId, surahNo, ayah).then(d => {
+                durations[ayah] = d
+                total += d
+              })
+            )
+          }
+          await Promise.all(promises)
         }
-        loader.onloadedmetadata = null; loader.onerror = null
-        loader.src = ''; loader.removeAttribute('src')
 
         if (!cancelled) {
+          durCacheRef.current = durations
           setTotalDuration(total)
-          localStorage.setItem(timelineKey, JSON.stringify(durCacheRef.current))
-          
+          localStorage.setItem(timelineKey, JSON.stringify(durations))
+
           // Background upload to Supabase for other users
           if (isSupabaseConfigured()) {
-             supabase
+            supabase
               .from('surah_timelines')
               .upsert({
                 surah_no: surahNo,
                 reciter_id: reciterId,
-                durations: durCacheRef.current
+                durations
               })
               .catch(console.error)
           }
@@ -242,7 +250,6 @@ export function AudioProvider({ children }) {
       if (nextNum > st.totalAyah) {
         if (st.isLooping) {
           // Restart from ayah 1
-          setCompletedTime(0)
           setCurrentAyah(1)
           setAyahTime(0)
           nextLoadedRef.current = 0
@@ -261,10 +268,7 @@ export function AudioProvider({ children }) {
         return
       }
 
-      // Update completed time
-      const ayahDur = durCacheRef.current[st.currentAyah] || pool.current[idx].duration || 3
-      const newCompleted = st.completedTime + ayahDur
-      setCompletedTime(newCompleted)
+      // Move to next ayah
       setCurrentAyah(nextNum)
       setAyahTime(0)
 
@@ -404,17 +408,14 @@ export function AudioProvider({ children }) {
     }
   }, [isPlaying])
 
-  const goToAyah = useCallback(async (ayahNum) => {
+  const goToAyah = useCallback(async (ayahNum, startAyahTime = 0) => {
     if (ayahNum < 1 || ayahNum > totalAyah) return
     const wasPlaying = isPlaying
     getActive().pause()
     setIsPlaying(false)
 
-    let acc = 0
-    for (let i = 1; i < ayahNum; i++) acc += durCacheRef.current[i] || 3
-    setCompletedTime(acc)
     setCurrentAyah(ayahNum)
-    setAyahTime(0)
+    setAyahTime(startAyahTime)
     nextLoadedRef.current = 0
 
     const url = await getAyahUrl(ayahNum)
@@ -422,10 +423,18 @@ export function AudioProvider({ children }) {
       const active = getActive()
       active.src = url
       active.load()
-      if (wasPlaying) {
-        const h = () => { active.play().then(() => setIsPlaying(true)).catch(() => {}); active.removeEventListener('canplay', h) }
-        active.addEventListener('canplay', h)
+      
+      const onLoaded = () => {
+        if (startAyahTime > 0 && active.duration >= startAyahTime) {
+          active.currentTime = startAyahTime
+        }
+        if (wasPlaying) {
+          active.play().then(() => setIsPlaying(true)).catch(() => {})
+        }
+        active.removeEventListener('canplay', onLoaded)
       }
+      active.addEventListener('canplay', onLoaded)
+      
       // Pre-load next
       if (ayahNum < totalAyah) preloadNext(ayahNum + 1)
     }
@@ -441,13 +450,20 @@ export function AudioProvider({ children }) {
   }, [currentAyah, goToAyah])
 
   const seekTo = useCallback((globalTime) => {
-    let acc = 0
-    for (let i = 1; i <= totalAyah; i++) {
-      const d = durCacheRef.current[i] || 3
-      if (globalTime < acc + d) { goToAyah(i); return }
-      acc += d
-    }
-  }, [totalAyah, goToAyah])
+    // We get globalTime in seconds, but our slider gives values. 
+    // We already have targetProgressPercent if needed, 
+    // but the slider typically asks us to seek by progress %.
+    // Let's assume globalTime is seconds, we calculate percent:
+    const targetPercent = (globalTime / (duration || 1)) * 100
+    const { targetAyah, ayahTime: targetAyahTime } = calculateSeekTarget(
+      durCacheRef.current,
+      targetPercent,
+      totalAyah
+    )
+    
+    // Jump to exactly that point in the calculated ayah
+    goToAyah(targetAyah, targetAyahTime)
+  }, [totalAyah, duration, goToAyah])
 
   const loadSurah = useCallback((data, startAyah = 1, startReciter = 1) => {
     if (surahData?.surahNo === data.surahNo && reciterId === startReciter) {
@@ -462,7 +478,7 @@ export function AudioProvider({ children }) {
     setCurrentAyah(startAyah)
     setReciterId(startReciter)
     setAyahTime(0); setAyahDuration(0)
-    setCompletedTime(0); setTotalDuration(0)
+    setTotalDuration(0)
     setSecondsListened(0); setUrlsReady(0)
   }, [surahData, currentAyah, reciterId, goToAyah])
 
