@@ -325,53 +325,7 @@ export function AudioProvider({ children }) {
     }
   }, [preloadNext, getAyahUrl])
 
-  // ── Background Playback / Screen Lock Fix ──
-  useEffect(() => {
-    let silentAudio = null
-    
-    const unlockAudioContext = () => {
-      // Create a tiny silent audio element that loops infinitely
-      // This forces iOS / Safari to keep the audio session alive in the background
-      // even if there's a 2ms gap between our real Audio elements.
-      if (!silentAudio) {
-        silentAudio = new Audio()
-        // Base64 encoded 0.1s of absolute silence (MP3)
-        silentAudio.src = 'data:audio/mp3;base64,//MkxAAQAAAAQQIAAAAAAAAP/xkOAAAAAAP//zJMQAAAAAAEECAAAAAAAAD/8ZDgAAAAAD//8yTEABAAAABBAgAAAAAAAA//GQ4AAAAAA//+='
-        silentAudio.loop = true
-        silentAudio.volume = 0.01 // barely non-zero just in case
-      }
-      
-      if (isPlaying && silentAudio.paused) {
-        silentAudio.play().catch(() => {})
-      } else if (!isPlaying && !silentAudio.paused) {
-        silentAudio.pause()
-      }
-    }
 
-    // Connect the silent keep-alive to our actual playback state
-    unlockAudioContext()
-
-    const handleVisibility = () => {
-      if (document.hidden && s.current.isPlaying) {
-        const active = getActive()
-        if (active && active.paused && active.src) {
-           active.play().catch(() => {})
-        }
-      }
-    }
-
-    window.addEventListener('pagehide', handleVisibility)
-    document.addEventListener('visibilitychange', handleVisibility)
-
-    return () => {
-      window.removeEventListener('pagehide', handleVisibility)
-      document.removeEventListener('visibilitychange', handleVisibility)
-      if (silentAudio) {
-        silentAudio.pause()
-        silentAudio.src = ''
-      }
-    }
-  }, [isPlaying])
 
   // Track listening
   useEffect(() => {
