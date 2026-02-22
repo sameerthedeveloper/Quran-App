@@ -325,6 +325,41 @@ export function AudioProvider({ children }) {
     }
   }, [preloadNext, getAyahUrl])
 
+  // ── High Precision Gapless Crossover Loop ──
+  // Replaces the native `ended` delay with a seamless 150ms early transition
+  useEffect(() => {
+    let loopId
+    const checkGapless = () => {
+      if (s.current.isPlaying) {
+        const audio = getActive()
+        const remaining = audio.duration - audio.currentTime
+        const st = s.current
+        const nextNum = st.currentAyah + 1
+
+        // Switch 150ms early to cover browser/JS play() delay, only if next is preloaded
+        if (remaining > 0 && remaining <= 0.150 && nextLoadedRef.current === nextNum) {
+          // Pause current instantly to prevent native 'ended' from firing duplicate switch
+          audio.pause()
+          
+          activeIdx.current = 1 - activeIdx.current
+          const nextAudio = getActive()
+          nextAudio.currentTime = 0
+          nextAudio.play().then(() => setIsPlaying(true)).catch(() => {})
+          nextLoadedRef.current = 0
+
+          setCurrentAyah(nextNum)
+          setAyahTime(0)
+
+          if (nextNum + 1 <= st.totalAyah) preloadNext(nextNum + 1)
+        }
+      }
+      loopId = requestAnimationFrame(checkGapless)
+    }
+
+    loopId = requestAnimationFrame(checkGapless)
+    return () => cancelAnimationFrame(loopId)
+  }, [preloadNext])
+
 
 
   // Track listening
