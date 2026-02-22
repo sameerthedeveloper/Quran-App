@@ -323,7 +323,7 @@ export default function Player() {
       </div>
 
       {/* ── Bottom Player Controls ── */}
-      <div className="flex-shrink-0 bg-white/95 backdrop-blur-2xl border-t border-gray-100 shadow-[0_-8px_30px_rgba(0,0,0,0.04)] pb-safe pt-1">
+      <div className="flex-shrink-0 bg-white/95 backdrop-blur-2xl border-t border-gray-100 shadow-[0_-8px_30px_rgba(0,0,0,0.04)] pt-1 pb-[70px]">
         {downloading && (
           <div className="px-5 pt-2">
             <div className="flex justify-between text-[10px] text-gray-500 mb-1 font-medium">
