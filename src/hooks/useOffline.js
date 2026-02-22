@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { isSurahDownloaded, cacheSurah, deleteSurahCache } from '../utils/cacheManager'
 
 export function useOffline() {
