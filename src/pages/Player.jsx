@@ -323,60 +323,76 @@ export default function Player() {
       </div>
 
       {/* ── Bottom Player Controls ── */}
-      <div className="flex-shrink-0 bg-white/95 backdrop-blur-xl border-t border-gray-100 shadow-[0_-2px_16px_rgba(0,0,0,0.05)]">
+      <div className="flex-shrink-0 bg-white/95 backdrop-blur-2xl border-t border-gray-100 shadow-[0_-8px_30px_rgba(0,0,0,0.04)] pb-safe pt-1">
         {downloading && (
-          <div className="px-4 pt-2">
-            <div className="flex justify-between text-[10px] text-gray-500 mb-1"><span>Downloading...</span><span>{downloading.progress}/{downloading.total}</span></div>
-            <div className="w-full h-1 bg-emerald-100 rounded-full overflow-hidden">
-              <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${(downloading.progress / downloading.total) * 100}%` }} />
+          <div className="px-5 pt-2">
+            <div className="flex justify-between text-[10px] text-gray-500 mb-1 font-medium">
+              <span>Downloading Surah...</span>
+              <span>{Math.round((downloading.progress / downloading.total) * 100)}%</span>
+            </div>
+            <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full bg-emerald-500 rounded-full transition-all duration-300" style={{ width: `${(downloading.progress / downloading.total) * 100}%` }} />
             </div>
           </div>
         )}
 
-        {/* Surah progress slider */}
-        <div className="px-4 pt-2.5">
-          <input type="range" min={0} max={duration || 1} value={currentTime}
-            onChange={(e) => seekTo(parseFloat(e.target.value))} step={0.5}
-            className="w-full h-1 appearance-none bg-gray-200 rounded-full outline-none cursor-pointer
-              [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3
-              [&::-webkit-slider-thumb]:bg-emerald-600 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:shadow-md" />
-          <div className="flex justify-between text-[10px] text-gray-400 mt-0.5 px-0.5">
-            <span>{fmt(currentTime)}</span>
-            <span className="text-emerald-500 font-medium">Ayah {currentAyah}/{totalAyah}</span>
-            <span>{fmt(duration)}</span>
+        {/* Timeline Slider */}
+        <div className="px-5 pt-3">
+          <div className="relative flex items-center group touch-none">
+            <input type="range" min={0} max={duration || 1} value={currentTime}
+              onChange={(e) => seekTo(parseFloat(e.target.value))} step={0.1}
+              className="absolute z-10 w-full h-6 opacity-0 cursor-pointer" />
+            <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
+              <div className="h-full bg-emerald-500 transition-all duration-75" style={{ width: `${(currentTime / (duration || 1)) * 100}%` }} />
+            </div>
+            {/* Custom Thumb indicator */}
+            <div className="absolute h-3 w-3 bg-white rounded-full shadow-[0_1px_3px_rgba(0,0,0,0.3)] border border-emerald-100 scale-0 group-active:scale-100 transition-transform duration-150 pointer-events-none"
+              style={{ left: `calc(${(currentTime / (duration || 1)) * 100}% - 6px)` }} />
+          </div>
+
+          <div className="flex justify-between items-center text-[11px] font-medium text-gray-400 mt-2 px-0.5 tracking-wide">
+            <span className="w-10 text-left">{fmt(currentTime)}</span>
+            <div className="flex bg-gray-100/80 rounded-full px-2.5 py-0.5">
+              <span className="text-gray-900">Ayah {currentAyah}</span>
+              <span className="text-gray-400 mx-0.5">/</span>
+              <span className="text-gray-500">{totalAyah}</span>
+            </div>
+            <span className="w-10 text-right">{fmt(duration)}</span>
           </div>
         </div>
 
-        {/* Main Controls */}
-        <div className="flex items-center justify-center gap-4 px-5 pb-3 pt-1">
+        {/* Playback Controls */}
+        <div className="flex items-center justify-between px-6 pb-4 pt-4">
           <button onClick={() => setIsLooping(!isLooping)}
-            className={`p-2 rounded-full transition-colors ${isLooping ? 'text-emerald-600 bg-emerald-50' : 'text-gray-300 hover:text-gray-500'}`}>
-            <Repeat size={16} />
+            className={`p-2 rounded-full transition-all active:scale-95 ${isLooping ? 'text-emerald-500 bg-emerald-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'}`}>
+            <Repeat size={18} strokeWidth={isLooping ? 2.5 : 2} />
           </button>
 
-          <button onClick={prevAyah} disabled={currentAyah <= 1}
-            className="p-2 text-gray-600 disabled:text-gray-300 hover:text-emerald-600 transition-colors">
-            <SkipBack size={22} fill="currentColor" />
-          </button>
+          <div className="flex items-center gap-6">
+            <button onClick={prevAyah} disabled={currentAyah <= 1}
+              className="p-2 text-gray-800 disabled:text-gray-300 hover:text-emerald-600 transition-colors active:scale-90">
+              <SkipBack size={28} fill="currentColor" />
+            </button>
 
-          <button onClick={togglePlay} disabled={loadingAudio}
-            className="w-14 h-14 flex items-center justify-center bg-gradient-to-br from-emerald-500 to-emerald-700 text-white rounded-full shadow-lg active:scale-95 disabled:opacity-60 transition-transform">
-            {loadingAudio
-              ? <Loader size={22} className="animate-spin" />
-              : isPlaying
-                ? <Pause size={26} fill="currentColor" />
-                : <Play size={26} fill="currentColor" className="ml-0.5" />
-            }
-          </button>
+            <button onClick={togglePlay} disabled={loadingAudio}
+              className="relative w-16 h-16 flex items-center justify-center bg-emerald-600 text-white rounded-full shadow-[0_8px_20px_rgba(16,185,129,0.3)] active:scale-95 disabled:opacity-70 transition-all hover:bg-emerald-700 hover:shadow-[0_8px_25px_rgba(16,185,129,0.4)]">
+              {loadingAudio
+                ? <Loader size={24} className="animate-spin text-emerald-100" />
+                : isPlaying
+                  ? <Pause size={28} fill="currentColor" />
+                  : <Play size={28} fill="currentColor" className="ml-1" />
+              }
+            </button>
 
-          <button onClick={nextAyah} disabled={currentAyah >= totalAyah && !isLooping}
-            className="p-2 text-gray-600 disabled:text-gray-300 hover:text-emerald-600 transition-colors">
-            <SkipForward size={22} fill="currentColor" />
-          </button>
+            <button onClick={nextAyah} disabled={currentAyah >= totalAyah && !isLooping}
+              className="p-2 text-gray-800 disabled:text-gray-300 hover:text-emerald-600 transition-colors active:scale-90">
+              <SkipForward size={28} fill="currentColor" />
+            </button>
+          </div>
 
           <button onClick={() => setShowSettings(!showSettings)}
-            className={`p-2 rounded-full transition-colors ${showSettings ? 'text-emerald-600 bg-emerald-50' : 'text-gray-300 hover:text-gray-500'}`}>
-            <Settings size={16} />
+            className={`p-2 rounded-full transition-all active:scale-95 ${showSettings ? 'text-emerald-500 bg-emerald-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'}`}>
+            <Settings size={20} strokeWidth={showSettings ? 2.5 : 2} />
           </button>
         </div>
       </div>
