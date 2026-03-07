@@ -5,6 +5,7 @@ import { AudioProvider } from './hooks/useAudio'
 import BottomNav from './components/BottomNav'
 import MiniPlayer from './components/MiniPlayer'
 import SplashScreen from './components/SplashScreen'
+import InstallPrompt from './components/InstallPrompt'
 import Auth from './pages/Auth'
 import Home from './pages/Home'
 import SurahList from './pages/SurahList'
@@ -40,6 +41,7 @@ function AppLayout() {
   return (
     <div className="min-h-screen bg-background flex flex-col max-w-lg mx-auto relative w-full overflow-x-hidden">
       {showSplash && <SplashScreen />}
+      <InstallPrompt />
       <Routes>
         <Route path="/auth" element={<Auth />} />
         <Route
