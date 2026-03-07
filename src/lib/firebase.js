@@ -4,13 +4,13 @@ import { getFirestore, initializeFirestore, persistentLocalCache, persistentMult
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
-    apiKey: "AIzaSyAvbUkRdP3NsQd-DWVzLvUwl00ZaEgT5Rk",
-    authDomain: "quranapp-cc219.firebaseapp.com",
-    projectId: "quranapp-cc219",
-    storageBucket: "quranapp-cc219.firebasestorage.app",
-    messagingSenderId: "547296517416",
-    appId: "1:547296517416:web:a6a0028c6e716bf639841d",
-    measurementId: "G-EPGXCZ1K8T"
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: import.meta.env.VITE_FIREBASE_APP_ID,
+    measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase

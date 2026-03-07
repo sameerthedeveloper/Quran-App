@@ -1,6 +1,7 @@
 import { useAuth } from '../hooks/useAuth'
 import { useNavigate } from 'react-router-dom'
 import { User, Clock, BookOpen, Flame, LogOut, Shield, Settings } from 'lucide-react'
+import ThemeSelector from '../components/ThemeSelector'
 
 export default function Profile() {
   const { user, profile, signOut, loading } = useAuth()
@@ -75,6 +76,14 @@ export default function Profile() {
             <p className="text-lg font-bold text-primary">{profile?.streak || 0}<span className="text-xs text-muted ml-1">days</span></p>
           </div>
         </div>
+      </div>
+
+      {/* Customization */}
+      <div className="px-5 mb-6">
+        <h2 className="text-sm font-semibold text-muted uppercase tracking-wider mb-3">
+          Preferences
+        </h2>
+        <ThemeSelector />
       </div>
 
       {/* Privacy notice */}

@@ -1,23 +1,23 @@
 @import "tailwindcss";
 
 @theme {
-  /* === Emerald Islamic Palette === */
-  --color-emerald-50: #ecfdf5;
-  --color-emerald-100: #d1fae5;
-  --color-emerald-200: #a7f3d0;
-  --color-emerald-300: #6ee7b7;
-  --color-emerald-400: #34d399;
-  --color-emerald-500: #10b981;
-  --color-emerald-600: #059669;
-  --color-emerald-700: #047857;
-  --color-emerald-800: #065f46;
-  --color-emerald-900: #064e3b;
-  --color-emerald-950: #022c22;
+  /* === Dynamic Theme Palette (Mapped to 'Emerald' utility class) === */
+  --color-emerald-50: var(--theme-50);
+  --color-emerald-100: var(--theme-100);
+  --color-emerald-200: var(--theme-200);
+  --color-emerald-300: var(--theme-300);
+  --color-emerald-400: var(--theme-400);
+  --color-emerald-500: var(--theme-500);
+  --color-emerald-600: var(--theme-600);
+  --color-emerald-700: var(--theme-700);
+  --color-emerald-800: var(--theme-800);
+  --color-emerald-900: var(--theme-900);
+  --color-emerald-950: var(--theme-950);
 
   /* Semantic tokens */
-  --color-primary: #059669;
-  --color-primary-light: #34d399;
-  --color-primary-dark: #047857;
+  --color-primary: var(--theme-600);
+  --color-primary-light: var(--theme-400);
+  --color-primary-dark: var(--theme-700);
   --color-primary-foreground: #ffffff;
 
   --color-surface: #f0fdf4;
@@ -49,11 +49,88 @@
   /* Shadows */
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-elevated: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
-  --shadow-glow: 0 0 20px rgba(5, 150, 105, 0.15);
+  --shadow-glow: 0 0 20px var(--theme-glow);
 }
 
 /* === Base Styles === */
 @layer base {
+
+  :root,
+  [data-theme="emerald"] {
+    --theme-50: #ecfdf5;
+    --theme-100: #d1fae5;
+    --theme-200: #a7f3d0;
+    --theme-300: #6ee7b7;
+    --theme-400: #34d399;
+    --theme-500: #10b981;
+    --theme-600: #059669;
+    --theme-700: #047857;
+    --theme-800: #065f46;
+    --theme-900: #064e3b;
+    --theme-950: #022c22;
+    --theme-glow: rgba(5, 150, 105, 0.15);
+  }
+
+  [data-theme="blue"] {
+    --theme-50: #eff6ff;
+    --theme-100: #dbeafe;
+    --theme-200: #bfdbfe;
+    --theme-300: #93c5fd;
+    --theme-400: #60a5fa;
+    --theme-500: #3b82f6;
+    --theme-600: #2563eb;
+    --theme-700: #1d4ed8;
+    --theme-800: #1e40af;
+    --theme-900: #1e3a8a;
+    --theme-950: #172554;
+    --theme-glow: rgba(37, 99, 235, 0.15);
+  }
+
+  [data-theme="indigo"] {
+    --theme-50: #eef2ff;
+    --theme-100: #e0e7ff;
+    --theme-200: #c7d2fe;
+    --theme-300: #a5b4fc;
+    --theme-400: #818cf8;
+    --theme-500: #6366f1;
+    --theme-600: #4f46e5;
+    --theme-700: #4338ca;
+    --theme-800: #3730a3;
+    --theme-900: #312e81;
+    --theme-950: #1e1b4b;
+    --theme-glow: rgba(79, 70, 229, 0.15);
+  }
+
+  [data-theme="rose"] {
+    --theme-50: #fff1f2;
+    --theme-100: #ffe4e6;
+    --theme-200: #fecdd3;
+    --theme-300: #fda4af;
+    --theme-400: #fb7185;
+    --theme-500: #f43f5e;
+    --theme-600: #e11d48;
+    --theme-700: #be123c;
+    --theme-800: #9f1239;
+    --theme-900: #881337;
+    --theme-950: #4c0519;
+    --theme-glow: rgba(225, 29, 72, 0.15);
+  }
+
+  [data-theme="amber"] {
+    --theme-50: #fffbeb;
+    --theme-100: #fef3c7;
+    --theme-200: #fde68a;
+    --theme-300: #fcd34d;
+    --theme-400: #fbbf24;
+    --theme-500: #f59e0b;
+    --theme-600: #d97706;
+    --theme-700: #b45309;
+    --theme-800: #92400e;
+    --theme-900: #78350f;
+    --theme-950: #451a03;
+    --theme-glow: rgba(217, 119, 6, 0.15);
+  }
+
   * {
     margin: 0;
     padding: 0;

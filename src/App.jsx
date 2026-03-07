@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useLayoutEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import { AudioProvider } from './hooks/useAudio'
@@ -93,6 +93,12 @@ function AppLayout() {
 }
 
 export default function App() {
+  // Load the theme before the first render to prevent "flashing" colors
+  useLayoutEffect(() => {
+    const savedTheme = localStorage.getItem('quran-theme') || 'emerald'
+    document.documentElement.setAttribute('data-theme', savedTheme)
+  }, [])
+
   return (
     <Router>
       <AuthProvider>
