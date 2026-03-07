@@ -4,7 +4,8 @@ import { useQuran } from '../hooks/useQuran'
 import { useOffline } from '../hooks/useOffline'
 import { useAuth } from '../hooks/useAuth'
 import { useAudio } from '../hooks/useAudio'
-import { supabase, isSupabaseConfigured } from '../lib/supabase'
+import { auth, db } from '../lib/firebase'
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
 import { RECITERS } from '../hooks/useQuran'
 import {
   ArrowLeft, Loader, Play, Pause, SkipBack, SkipForward,
@@ -126,13 +127,15 @@ export default function Player() {
 
   // Listening log
   useEffect(() => {
-    if (secondsListened > 0 && secondsListened % 30 === 0 && isSupabaseConfigured() && user) {
-      supabase.from('listening_logs').insert({
-        user_id: user.id, surah: surahData?.surahName || `Surah ${surahNum}`,
-        ayah: currentAyah, seconds_listened: 30,
+    if (secondsListened > 0 && secondsListened % 30 === 0 && user) {
+      addDoc(collection(db, 'users', user.uid, 'listening_logs'), {
+        surah: surahData?.surahName || `Surah ${surahNum}`,
+        ayah: currentAyah, 
+        seconds_listened: 30,
+        created_at: serverTimestamp(),
       }).then(() => {
         if (profile) updateProfile({ total_minutes: Math.floor((profile.total_minutes * 60 + 30) / 60) })
-      })
+      }).catch(console.error)
     }
   }, [secondsListened])
 

@@ -1,9 +1,10 @@
 import { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react'
 
 import { getAyahAudio, getReciterCode } from '../utils/audioSource'
+import { db } from '../lib/firebase'
+import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { ensureAyahDuration } from '../utils/ensureDuration'
 import { calculateSurahProgress, calculateSeekTarget } from '../utils/gaplessTiming'
-import { supabase, isSupabaseConfigured } from '../lib/supabase'
 
 const AudioCtx = createContext(null)
 
@@ -149,17 +150,14 @@ export function AudioProvider({ children }) {
         } catch (e) {}
       }
 
-      // 2. Try Supabase
-      if (!hasFullTimeline && isSupabaseConfigured()) {
+      // 2. Try Firestore
+      if (!hasFullTimeline) {
         try {
-          const { data, error } = await supabase
-            .from('surah_timelines')
-            .select('durations')
-            .eq('surah_no', surahNo)
-            .eq('reciter_id', reciterId)
-            .maybeSingle()
+          const docRef = doc(db, 'surah_timelines', `${surahNo}_${reciterId}`)
+          const docSnap = await getDoc(docRef)
             
-          if (!error && data?.durations) {
+          if (docSnap.exists() && docSnap.data().durations) {
+            const data = docSnap.data()
             let allPresent = true
             total = 0
             for (let i = 1; i <= totalAyah; i++) {
@@ -175,7 +173,7 @@ export function AudioProvider({ children }) {
               }
             }
           }
-        } catch (err) { console.error('Supabase timeline fetch failed:', err) }
+        } catch (err) { console.error('Firestore timeline fetch failed:', err) }
       }
 
       // 3. Fallback to duration extractor (IndexedDB -> Audio metadata)
@@ -206,17 +204,14 @@ export function AudioProvider({ children }) {
           setTotalDuration(total)
           localStorage.setItem(timelineKey, JSON.stringify(durations))
 
-          // Background upload to Supabase for other users
-          if (isSupabaseConfigured()) {
-            supabase
-              .from('surah_timelines')
-              .upsert({
-                surah_no: surahNo,
-                reciter_id: reciterId,
-                durations
-              })
-              .catch(console.error)
-          }
+          // Background upload to Firestore for other users
+          const docRef = doc(db, 'surah_timelines', `${surahNo}_${reciterId}`)
+          setDoc(docRef, {
+            surah_no: surahNo,
+            reciter_id: reciterId,
+            durations,
+            created_at: new Date().toISOString()
+          }, { merge: true }).catch(console.error)
         }
       }
     }
@@ -338,8 +333,9 @@ export function AudioProvider({ children }) {
 
         // Switch 150ms early to cover browser/JS play() delay, only if next is preloaded
         if (remaining > 0 && remaining <= 0.150 && nextLoadedRef.current === nextNum) {
-          // Pause current instantly to prevent native 'ended' from firing duplicate switch
-          audio.pause()
+          // We intentionally DO NOT pause the current audio here.
+          // We let it finish playing naturally (it only has ~150ms left).
+          // This allows for a true seamless overlap rather than abruptly cutting off the tail end of the ayah.
           
           activeIdx.current = 1 - activeIdx.current
           const nextAudio = getActive()

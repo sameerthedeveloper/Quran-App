@@ -1,0 +1,85 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ========================================================================
+    // HELPER FUNCTIONS
+    // ========================================================================
+    
+    // Check if the user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Check if the user is accessing their own data
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // ========================================================================
+    // PUBLIC READ-ONLY COLLECTIONS (Quran Core Data)
+    // ========================================================================
+    
+    match /surahs/{surahId} {
+      allow read: if true;
+      allow write: if false; // Only Admin SDK can write
+      
+      match /ayahs/{ayahId} {
+        allow read: if true;
+        allow write: if false; 
+      }
+    }
+    
+    match /translations/{translationId} {
+      allow read: if true;
+      allow write: if false;
+    }
+    
+    match /surah_timelines/{timelineId} {
+      allow read: if true;
+      // Allow authenticated users to insert if it doesn't exist yet (Client-side caching)
+      // Otherwise, restrict to Admin only to prevent tampering
+      allow create: if isAuthenticated();
+      allow update, delete: if false; 
+    }
+
+    // ========================================================================
+    // PUBLIC FEED (Reflections / Notes)
+    // ========================================================================
+    
+    match /public_notes/{noteId} {
+      // Anyone can read the public reflections feed
+      allow read: if true;
+      
+      // Users can only create/update notes where they are set as the owner
+      allow create, update: if isOwner(request.resource.data.userId);
+      
+      // Users can only delete their own notes
+      allow delete: if isOwner(resource.data.userId);
+    }
+
+    // ========================================================================
+    // PRIVATE USER DATA 
+    // ========================================================================
+    
+    match /users/{userId} {
+      // Users can only read and write their own profile document
+      allow read, write: if isOwner(userId);
+      
+      // Subcollection: Bookmarks
+      match /bookmarks/{bookmarkId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // Subcollection: Private Notes
+      match /notes/{noteId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // Subcollection: Listening Logs
+      match /listening_logs/{logId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+  }
+}

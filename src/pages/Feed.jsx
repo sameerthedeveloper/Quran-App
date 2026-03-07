@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { useQuran } from '../hooks/useQuran'
-import { supabase, isSupabaseConfigured } from '../lib/supabase'
+import { db } from '../lib/firebase'
+import { collection, query, orderBy, limit, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore'
 import ReflectionCard from '../components/ReflectionCard'
 import { MessageCircle, Send, Loader, BookOpen, Heart } from 'lucide-react'
 
@@ -16,47 +17,43 @@ export default function Feed() {
   const [showCompose, setShowCompose] = useState(false)
 
   const fetchReflections = useCallback(async () => {
-    if (!isSupabaseConfigured()) {
-      setLoading(false)
-      return
-    }
-
     try {
-      const { data, error } = await supabase
-        .from('reflections')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(50)
+      const q = query(
+        collection(db, 'public_notes'),
+        orderBy('created_at', 'desc'),
+        limit(50)
+      )
 
-      if (!error && data) setReflections(data)
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const newReflections = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          // Ensure created_at is serializable
+          created_at: doc.data().created_at?.toDate().toISOString() || new Date().toISOString()
+        }))
+        setReflections(newReflections)
+        setLoading(false)
+      })
+
+      return () => unsubscribe()
     } catch (err) {
       console.error('Error fetching reflections:', err)
-    } finally {
       setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    fetchReflections()
+    let unsubscribe
+    fetchReflections().then(unsub => {
+      if (typeof unsub === 'function') {
+        unsubscribe = unsub
+      }
+    })
+    
+    return () => {
+      if (unsubscribe) unsubscribe()
+    }
   }, [fetchReflections])
-
-  // Real-time subscription
-  useEffect(() => {
-    if (!isSupabaseConfigured()) return
-
-    const channel = supabase
-      .channel('reflections')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'reflections',
-      }, (payload) => {
-        setReflections(prev => [payload.new, ...prev])
-      })
-      .subscribe()
-
-    return () => supabase.removeChannel(channel)
-  }, [])
 
   const handlePost = async (e) => {
     e.preventDefault()
@@ -64,18 +61,17 @@ export default function Feed() {
 
     setPosting(true)
     try {
-      const { error } = await supabase.from('reflections').insert({
-        user_id: user.id,
+      await addDoc(collection(db, 'public_notes'), {
+        userId: user.uid,
         username: profile?.username || 'Anonymous',
         message: message.trim(),
         surah: selectedSurah || null,
+        created_at: serverTimestamp(),
       })
 
-      if (!error) {
-        setMessage('')
-        setSelectedSurah('')
-        setShowCompose(false)
-      }
+      setMessage('')
+      setSelectedSurah('')
+      setShowCompose(false)
     } catch (err) {
       console.error('Error posting reflection:', err)
     } finally {
@@ -161,12 +157,6 @@ export default function Feed() {
           <div className="flex flex-col items-center py-20">
             <Loader className="animate-spin text-primary mb-3" size={28} />
             <p className="text-sm text-muted">Loading reflections...</p>
-          </div>
-        ) : !isSupabaseConfigured() ? (
-          <div className="flex flex-col items-center py-20 text-center">
-            <MessageCircle className="text-muted mb-3" size={28} />
-            <p className="text-sm text-foreground font-medium">Connect Supabase</p>
-            <p className="text-xs text-muted mt-1">Configure your .env to see reflections</p>
           </div>
         ) : reflections.length === 0 ? (
           <div className="flex flex-col items-center py-20 text-center">
